@@ -1,5 +1,6 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { apiUrl } from '../config.js';
 
 interface FileInfo {
   name: string;
@@ -43,7 +44,7 @@ export class FileBrowser extends LitElement {
   private async loadDirectory(dirPath: string) {
     this.loading = true;
     try {
-      const response = await fetch(`/api/fs/browse?path=${encodeURIComponent(dirPath)}`);
+      const response = await fetch(apiUrl(`/api/fs/browse?path=${encodeURIComponent(dirPath)}`));
       if (response.ok) {
         const data: DirectoryListing = await response.json();
         this.currentPath = data.absolutePath;

@@ -1,5 +1,6 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { apiUrl } from '../config.js';
 import './file-browser.js';
 
 export interface SessionCreateData {
@@ -64,7 +65,7 @@ export class SessionCreateForm extends LitElement {
     };
 
     try {
-      const response = await fetch('/api/sessions', {
+      const response = await fetch(apiUrl('/api/sessions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(sessionData)

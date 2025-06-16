@@ -8,6 +8,7 @@ import './components/session-list.js';
 import './components/session-view.js';
 
 import type { Session } from './components/session-list.js';
+import { apiUrl } from './config.js';
 
 @customElement('vibetunnel-app')
 export class VibeTunnelApp extends LitElement {
@@ -58,7 +59,7 @@ export class VibeTunnelApp extends LitElement {
   private async loadSessions() {
     this.loading = true;
     try {
-      const response = await fetch('/api/sessions');
+      const response = await fetch(apiUrl('/api/sessions'));
       if (response.ok) {
         const sessionsData = await response.json();
         this.sessions = sessionsData.map((session: any) => ({

@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Session } from './session-list.js';
+import { config, apiUrl } from '../config.js';
 
 @customElement('session-view')
 export class SessionView extends LitElement {
@@ -18,6 +19,11 @@ export class SessionView extends LitElement {
   @state() private isMobile = false;
   @state() private touchStartX = 0;
   @state() private touchStartY = 0;
+  
+  private websocket: WebSocket | null = null;
+  private terminalElement: HTMLElement | null = null;
+  private terminalBuffer: string[] = [];
+  private castHeader: any = null;
 
   private keyboardHandler = (e: KeyboardEvent) => {
     if (!this.session) return;
@@ -98,6 +104,12 @@ export class SessionView extends LitElement {
     if (this.player) {
       this.player = null;
     }
+    
+    // Cleanup WebSocket if exists
+    if (this.websocket) {
+      this.websocket.close();
+      this.websocket = null;
+    }
   }
 
   updated(changedProperties: any) {
@@ -115,18 +127,179 @@ export class SessionView extends LitElement {
     if (!this.session) return;
     
     const terminalElement = this.querySelector('#interactive-terminal') as HTMLElement;
-    if (terminalElement && (window as any).AsciinemaPlayer) {
-      try {
-        // For ended sessions, use snapshot instead of stream to avoid reloading
-        const url = this.session.status === 'exited' 
-          ? `/api/sessions/${this.session.id}/snapshot`
-          : `/api/sessions/${this.session.id}/stream`;
+    if (!terminalElement) return;
+    
+    // Store reference for WebSocket updates
+    this.terminalElement = terminalElement;
+    
+    if (this.session.status === 'exited') {
+      // For ended sessions, use the existing snapshot API with AsciinemaPlayer
+      if ((window as any).AsciinemaPlayer) {
+        try {
+          const url = `/api/sessions/${this.session.id}/snapshot`;
+          
+          this.player = (window as any).AsciinemaPlayer.create(
+            { url },
+            terminalElement,
+            {
+              autoPlay: true,
+              loop: false,
+              controls: false,
+              fit: 'both',
+              terminalFontSize: '12px',
+              idleTimeLimit: 0.5,
+              preload: true,
+              poster: 'npt:999999'
+            }
+          );
+
+          // Disable focus outline and fullscreen functionality
+          if (this.player && this.player.el) {
+            this.player.el.style.outline = 'none';
+            this.player.el.style.border = 'none';
+            this.player.el.removeAttribute('tabindex');
+            this.player.el.style.pointerEvents = 'none';
+            
+            const terminal = this.player.el.querySelector('.ap-terminal, .ap-screen, pre');
+            if (terminal) {
+              terminal.removeAttribute('tabindex');
+              terminal.style.outline = 'none';
+            }
+          }
+        } catch (error) {
+          console.error('Error creating snapshot terminal:', error);
+        }
+      }
+    } else {
+      // For running sessions, use WebSocket
+      this.connectWebSocket();
+    }
+  }
+  
+  private connectWebSocket() {
+    if (!this.session || this.websocket) return;
+    
+    // Use WebSocket URL from config
+    const wsUrl = `${config.wsBaseUrl}/?sessionId=${this.session.id}`;
+    
+    console.log('Connecting to WebSocket:', wsUrl);
+    
+    try {
+      this.websocket = new WebSocket(wsUrl);
+      
+      this.websocket.onopen = () => {
+        console.log('WebSocket connected for session:', this.session!.id);
+      };
+      
+      this.websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          this.handleWebSocketMessage(data);
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+      
+      this.websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+      
+      this.websocket.onclose = () => {
+        console.log('WebSocket disconnected');
+        this.websocket = null;
+      };
+    } catch (error) {
+      console.error('Error creating WebSocket:', error);
+    }
+  }
+  
+  private handleWebSocketMessage(data: any) {
+    if (!this.terminalElement) return;
+    
+    switch (data.type) {
+      case 'header':
+        // Store the cast header and create player
+        this.castHeader = data.data;
+        this.createWebSocketPlayer();
+        break;
         
-        const config = this.session.status === 'exited'
-          ? { url } // Static snapshot
-          : { driver: "eventsource", url }; // Live stream
+      case 'output':
+        // Add output to buffer
+        if (this.player) {
+          this.terminalBuffer.push(data.data);
+          // If player supports real-time updates, feed the data
+          if (this.player.feed) {
+            this.player.feed(data.data);
+          }
+        }
+        break;
         
-        this.player = (window as any).AsciinemaPlayer.create(config, terminalElement, {
+      case 'error':
+        console.error('Session error:', data.message);
+        break;
+        
+      case 'session_ended':
+        console.log('Session ended');
+        // Switch to snapshot view
+        if (this.player) {
+          this.player = null;
+        }
+        this.session = { ...this.session!, status: 'exited' };
+        this.requestUpdate();
+        setTimeout(() => {
+          this.createInteractiveTerminal();
+        }, 100);
+        break;
+    }
+  }
+  
+  private createWebSocketPlayer() {
+    if (!this.terminalElement || !this.castHeader || !(window as any).AsciinemaPlayer) return;
+    
+    try {
+      // Create a dynamic cast data source for AsciinemaPlayer
+      const castData = {
+        header: this.castHeader,
+        buffer: this.terminalBuffer,
+        getLine: function(lineNum: number) {
+          if (lineNum === 0) {
+            return JSON.stringify(this.header);
+          }
+          const eventIndex = lineNum - 1;
+          if (eventIndex < this.buffer.length) {
+            return JSON.stringify(this.buffer[eventIndex]);
+          }
+          return null;
+        }
+      };
+      
+      // Create player with custom driver that uses our WebSocket data
+      this.player = (window as any).AsciinemaPlayer.create(
+        {
+          driver: {
+            kind: 'websocket',
+            connect: (callbacks: any) => {
+              // Feed existing buffer
+              callbacks.onHeader(this.castHeader);
+              this.terminalBuffer.forEach(event => {
+                callbacks.onEvent(event);
+              });
+              
+              // Store callbacks for future events
+              this.player.feed = (event: any) => {
+                callbacks.onEvent(event);
+              };
+              
+              return {
+                disconnect: () => {
+                  // Cleanup
+                }
+              };
+            }
+          }
+        },
+        this.terminalElement,
+        {
           autoPlay: true,
           loop: false,
           controls: false,
@@ -135,29 +308,59 @@ export class SessionView extends LitElement {
           idleTimeLimit: 0.5,
           preload: true,
           poster: 'npt:999999'
-        });
-
-        // Disable focus outline and fullscreen functionality
-        if (this.player && this.player.el) {
-          // Remove focus outline
-          this.player.el.style.outline = 'none';
-          this.player.el.style.border = 'none';
-          
-          // Disable fullscreen hotkey by removing tabindex and preventing focus
-          this.player.el.removeAttribute('tabindex');
-          this.player.el.style.pointerEvents = 'none';
-          
-          // Find the terminal element and make it non-focusable
-          const terminal = this.player.el.querySelector('.ap-terminal, .ap-screen, pre');
-          if (terminal) {
-            terminal.removeAttribute('tabindex');
-            terminal.style.outline = 'none';
-          }
         }
-      } catch (error) {
-        console.error('Error creating interactive terminal:', error);
+      );
+
+      // Disable focus outline and fullscreen functionality
+      if (this.player && this.player.el) {
+        this.player.el.style.outline = 'none';
+        this.player.el.style.border = 'none';
+        this.player.el.removeAttribute('tabindex');
+        this.player.el.style.pointerEvents = 'none';
+        
+        const terminal = this.player.el.querySelector('.ap-terminal, .ap-screen, pre');
+        if (terminal) {
+          terminal.removeAttribute('tabindex');
+          terminal.style.outline = 'none';
+        }
       }
+    } catch (error) {
+      console.error('Error creating WebSocket player:', error);
+      // Fallback to simple display
+      this.displaySimpleTerminal();
     }
+  }
+  
+  private displaySimpleTerminal() {
+    if (!this.terminalElement || !this.castHeader) return;
+    
+    // Simple fallback display without AsciinemaPlayer
+    this.terminalElement.innerHTML = `
+      <div style="background: black; color: #d4d4d4; padding: 16px; font-family: monospace; font-size: 12px; height: 100%; overflow-y: auto;">
+        <pre id="terminal-output" style="margin: 0; white-space: pre-wrap;"></pre>
+      </div>
+    `;
+    
+    // Display buffered content
+    const outputElement = this.terminalElement.querySelector('#terminal-output');
+    if (outputElement) {
+      this.terminalBuffer.forEach(event => {
+        if (Array.isArray(event) && event.length >= 3 && event[1] === 'o') {
+          outputElement.textContent += event[2];
+        }
+      });
+    }
+    
+    // Update with new content as it arrives
+    this.player = {
+      feed: (event: any) => {
+        if (outputElement && Array.isArray(event) && event.length >= 3 && event[1] === 'o') {
+          outputElement.textContent += event[2];
+          // Auto-scroll to bottom
+          this.terminalElement!.scrollTop = this.terminalElement!.scrollHeight;
+        }
+      }
+    };
   }
 
   private async handleKeyboardInput(e: KeyboardEvent) {
@@ -216,21 +419,15 @@ export class SessionView extends LitElement {
       }
     }
 
-    // Send the input to the session
-    try {
-      const response = await fetch(`/api/sessions/${this.session.id}/input`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ text: inputText })
-      });
-
-      if (!response.ok) {
-        console.error('Failed to send input to session');
+    // Send the input via WebSocket
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      try {
+        this.websocket.send(JSON.stringify({ type: 'input', text: inputText }));
+      } catch (error) {
+        console.error('Error sending input via WebSocket:', error);
       }
-    } catch (error) {
-      console.error('Error sending input:', error);
+    } else {
+      console.error('WebSocket not connected');
     }
   }
 
@@ -399,20 +596,15 @@ export class SessionView extends LitElement {
   private async sendInputText(text: string) {
     if (!this.session) return;
 
-    try {
-      const response = await fetch(`/api/sessions/${this.session.id}/input`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ text })
-      });
-
-      if (!response.ok) {
-        console.error('Failed to send input to session');
+    // Send the input via WebSocket
+    if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+      try {
+        this.websocket.send(JSON.stringify({ type: 'input', text }));
+      } catch (error) {
+        console.error('Error sending input via WebSocket:', error);
       }
-    } catch (error) {
-      console.error('Error sending input:', error);
+    } else {
+      console.error('WebSocket not connected');
     }
   }
 
@@ -438,7 +630,7 @@ export class SessionView extends LitElement {
     if (!this.session) return;
 
     try {
-      const response = await fetch('/api/sessions');
+      const response = await fetch(apiUrl('/api/sessions'));
       if (!response.ok) return;
       
       const sessions = await response.json();

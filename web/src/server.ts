@@ -705,7 +705,12 @@ app.get('/api/fs/browse', (req, res) => {
 
 // === WEBSOCKETS ===
 
-// WebSocket for hot reload
+// Store active WebSocket connections for each session
+const sessionWebSocketClients = new Map<string, Set<any>>();
+// Store tail processes for each session
+const sessionTailProcesses = new Map<string, any>();
+
+// WebSocket connection handler
 wss.on('connection', (ws, req) => {
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const isHotReload = url.searchParams.get('hotReload') === 'true';
@@ -718,7 +723,52 @@ wss.on('connection', (ws, req) => {
         return;
     }
 
-    ws.close(1008, 'Only hot reload connections supported');
+    // Handle terminal WebSocket connections
+    const sessionId = url.searchParams.get('sessionId');
+    if (!sessionId) {
+        ws.close(1008, 'Session ID required');
+        return;
+    }
+
+    console.log(`WebSocket connection established for session: ${sessionId}`);
+
+    // Add client to session's client set
+    if (!sessionWebSocketClients.has(sessionId)) {
+        sessionWebSocketClients.set(sessionId, new Set());
+    }
+    sessionWebSocketClients.get(sessionId)!.add(ws);
+
+    // Start streaming terminal output to this client
+    streamSessionToWebSocket(sessionId, ws);
+
+    // Handle incoming messages (terminal input)
+    ws.on('message', async (message) => {
+        try {
+            const data = JSON.parse(message.toString());
+            if (data.type === 'input' && data.text !== undefined) {
+                await sendInputToSession(sessionId, data.text);
+            }
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+            ws.send(JSON.stringify({ type: 'error', message: 'Invalid message format' }));
+        }
+    });
+
+    // Clean up on disconnect
+    ws.on('close', () => {
+        console.log(`WebSocket disconnected for session: ${sessionId}`);
+        const clients = sessionWebSocketClients.get(sessionId);
+        if (clients) {
+            clients.delete(ws);
+            if (clients.size === 0) {
+                sessionWebSocketClients.delete(sessionId);
+            }
+        }
+    });
+
+    ws.on('error', (error) => {
+        console.error(`WebSocket error for session ${sessionId}:`, error);
+    });
 });
 
 // Hot reload file watching in development
@@ -737,6 +787,190 @@ if (process.env.NODE_ENV !== 'production') {
             }
         });
     });
+}
+
+// === WebSocket Helper Functions ===
+
+// Stream session output to WebSocket client
+function streamSessionToWebSocket(sessionId: string, ws: any) {
+    const streamOutPath = path.join(TTY_FWD_CONTROL_DIR, sessionId, 'stream-out');
+
+    if (!fs.existsSync(streamOutPath)) {
+        ws.send(JSON.stringify({ type: 'error', message: 'Session not found' }));
+        ws.close(1008, 'Session not found');
+        return;
+    }
+
+    const startTime = Date.now() / 1000;
+    let headerSent = false;
+
+    // Send existing content first
+    try {
+        const content = fs.readFileSync(streamOutPath, 'utf8');
+        const lines = content.trim().split('\n');
+
+        for (const line of lines) {
+            if (line.trim()) {
+                try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.version && parsed.width && parsed.height) {
+                        ws.send(JSON.stringify({ type: 'header', data: parsed }));
+                        headerSent = true;
+                    } else if (Array.isArray(parsed) && parsed.length >= 3) {
+                        ws.send(JSON.stringify({ type: 'output', data: [0, parsed[1], parsed[2]] }));
+                    }
+                } catch (e) {
+                    // Skip invalid lines
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error reading existing content:', error);
+    }
+
+    // Send default header if none found
+    if (!headerSent) {
+        const defaultHeader = {
+            version: 2,
+            width: 80,
+            height: 24,
+            timestamp: Math.floor(startTime),
+            env: { TERM: "xterm-256color" }
+        };
+        ws.send(JSON.stringify({ type: 'header', data: defaultHeader }));
+    }
+
+    // Start tailing the file for new content
+    const tailProcess = spawn('tail', ['-f', streamOutPath]);
+    let buffer = '';
+
+    // Store the tail process for cleanup
+    if (!sessionTailProcesses.has(sessionId)) {
+        sessionTailProcesses.set(sessionId, new Set());
+    }
+    sessionTailProcesses.get(sessionId)!.add(tailProcess);
+
+    tailProcess.stdout.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+            if (line.trim()) {
+                try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.version && parsed.width && parsed.height) {
+                        // Skip duplicate headers
+                        return;
+                    }
+                    if (Array.isArray(parsed) && parsed.length >= 3) {
+                        const currentTime = Date.now() / 1000;
+                        const realTimeEvent = [currentTime - startTime, parsed[1], parsed[2]];
+                        ws.send(JSON.stringify({ type: 'output', data: realTimeEvent }));
+                    }
+                } catch (e) {
+                    // Handle non-JSON as raw output
+                    const currentTime = Date.now() / 1000;
+                    const castEvent = [currentTime - startTime, "o", line];
+                    ws.send(JSON.stringify({ type: 'output', data: castEvent }));
+                }
+            }
+        }
+    });
+
+    tailProcess.on('error', (error) => {
+        console.error(`Tail process error for session ${sessionId}:`, error);
+        cleanup();
+    });
+
+    tailProcess.on('exit', (code) => {
+        console.log(`Tail process exited for session ${sessionId} with code ${code}`);
+        cleanup();
+    });
+
+    // Session monitoring
+    let sessionPid: number | null = null;
+    executeTtyFwd(['--control-path', TTY_FWD_CONTROL_DIR, '--list-sessions'])
+        .then(output => {
+            const sessions: TtyFwdListResponse = JSON.parse(output || '{}');
+            if (sessions[sessionId]) {
+                sessionPid = sessions[sessionId].pid;
+            }
+        })
+        .catch(error => {
+            console.error('Error getting session PID:', error);
+        });
+
+    // Check if process is still alive periodically
+    const sessionCheckInterval = setInterval(() => {
+        if (sessionPid) {
+            try {
+                process.kill(sessionPid, 0);
+            } catch (error) {
+                console.log(`Session ${sessionId} process ${sessionPid} has died`);
+                ws.send(JSON.stringify({ type: 'session_ended' }));
+                cleanup();
+            }
+        }
+    }, 2000);
+
+    const cleanup = () => {
+        clearInterval(sessionCheckInterval);
+        tailProcess.kill('SIGTERM');
+        
+        // Remove from tail processes
+        const processes = sessionTailProcesses.get(sessionId);
+        if (processes) {
+            processes.delete(tailProcess);
+            if (processes.size === 0) {
+                sessionTailProcesses.delete(sessionId);
+            }
+        }
+    };
+
+    // Clean up when WebSocket closes
+    ws.on('close', cleanup);
+}
+
+// Send input to session via tty-fwd
+async function sendInputToSession(sessionId: string, text: string): Promise<void> {
+    try {
+        // Validate session exists and is running
+        const output = await executeTtyFwd(['--control-path', TTY_FWD_CONTROL_DIR, '--list-sessions']);
+        const sessions: TtyFwdListResponse = JSON.parse(output || '{}');
+        
+        if (!sessions[sessionId]) {
+            throw new Error('Session not found');
+        }
+
+        const session = sessions[sessionId];
+        if (session.status !== 'running') {
+            throw new Error('Session is not running');
+        }
+
+        // Check if this is a special key
+        const specialKeys = ['arrow_up', 'arrow_down', 'arrow_left', 'arrow_right', 'escape', 'enter'];
+        const isSpecialKey = specialKeys.includes(text);
+
+        if (isSpecialKey) {
+            await executeTtyFwd([
+                '--control-path', TTY_FWD_CONTROL_DIR,
+                '--session', sessionId,
+                '--send-key', text
+            ]);
+        } else {
+            await executeTtyFwd([
+                '--control-path', TTY_FWD_CONTROL_DIR,
+                '--session', sessionId,
+                '--send-text', text
+            ]);
+        }
+
+        console.log(`Input sent to session ${sessionId}: ${text}`);
+    } catch (error) {
+        console.error('Error sending input to session:', error);
+        throw error;
+    }
 }
 
 server.listen(PORT, () => {

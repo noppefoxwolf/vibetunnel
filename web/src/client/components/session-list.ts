@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import './session-create-form.js';
+import { apiUrl } from '../config.js';
 
 export interface Session {
   id: string;
@@ -170,7 +171,7 @@ export class SessionList extends LitElement {
     this.requestUpdate();
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}`), {
         method: 'DELETE'
       });
 
@@ -210,7 +211,7 @@ export class SessionList extends LitElement {
     this.requestUpdate();
 
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/cleanup`, {
+      const response = await fetch(apiUrl(`/api/sessions/${sessionId}/cleanup`), {
         method: 'DELETE'
       });
 
@@ -287,7 +288,7 @@ export class SessionList extends LitElement {
 
     try {
       // Use the bulk cleanup API endpoint
-      const response = await fetch('/api/cleanup-exited', {
+      const response = await fetch(apiUrl('/api/cleanup-exited'), {
         method: 'POST'
       });
 

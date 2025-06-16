@@ -79,4 +79,7 @@ DerivedData/
 
 # Local Development Settings
 Local.xcconfig
-web/public/components/session-list.js
+
+# Web build artifacts
+web/public/
+web/dist/
