@@ -104,22 +104,25 @@ struct MenuBarView: View {
                     Divider()
 
                     // About
-                    SettingsLink {
-                        HStack {
-                            Image(systemName: "info.circle")
-                            Text("About VibeTunnel")
+                    Button(
+                        action: {
+                            SettingsOpener.openSettings()
+                            // Navigate to About tab after settings opens
+                            Task {
+                                try? await Task.sleep(for: .milliseconds(100))
+                                NotificationCenter.default.post(
+                                    name: .openSettingsTab,
+                                    object: SettingsTab.about
+                                )
+                            }
+                        },
+                        label: {
+                            HStack {
+                                Image(systemName: "info.circle")
+                                Text("About VibeTunnel")
+                            }
                         }
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
-                        // Navigate to About tab after settings opens
-                        Task {
-                            try? await Task.sleep(for: .milliseconds(100))
-                            NotificationCenter.default.post(
-                                name: .openSettingsTab,
-                                object: SettingsTab.about
-                            )
-                        }
-                    })
+                    )
                 } label: {
                     Label("Help", systemImage: "questionmark.circle")
                 }
@@ -135,9 +138,14 @@ struct MenuBarView: View {
             )
 
             // Settings button
-            SettingsLink {
-                Label("Settings…", systemImage: "gear")
-            }
+            Button(
+                action: {
+                    SettingsOpener.openSettings()
+                },
+                label: {
+                    Label("Settings…", systemImage: "gear")
+                }
+            )
             .buttonStyle(MenuButtonStyle())
             .keyboardShortcut(",", modifiers: .command)
 
@@ -256,7 +264,10 @@ struct SessionRowView: View {
     }
 
     private var sessionName: String {
-        let name = session.value.name.isEmpty ? session.value.cmdline.first ?? "Unknown" : session.value.name
+        // Extract the working directory name as the session name
+        let workingDir = session.value.workingDir
+        let name = (workingDir as NSString).lastPathComponent
+        
         // Truncate long session names
         if name.count > 35 {
             let prefix = String(name.prefix(20))

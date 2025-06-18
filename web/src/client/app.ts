@@ -10,6 +10,7 @@ import './components/session-view.js';
 import './components/session-card.js';
 
 import type { Session } from './components/session-list.js';
+import type { SessionCard } from './components/session-card.js';
 
 @customElement('vibetunnel-app')
 export class VibeTunnelApp extends LitElement {
@@ -19,6 +20,7 @@ export class VibeTunnelApp extends LitElement {
   }
 
   @state() private errorMessage = '';
+  @state() private successMessage = '';
   @state() private sessions: Session[] = [];
   @state() private loading = false;
   @state() private currentView: 'list' | 'session' = 'list';
@@ -53,8 +55,20 @@ export class VibeTunnelApp extends LitElement {
     }, 5000);
   }
 
+  private showSuccess(message: string) {
+    this.successMessage = message;
+    // Clear success after 5 seconds
+    setTimeout(() => {
+      this.successMessage = '';
+    }, 5000);
+  }
+
   private clearError() {
     this.errorMessage = '';
+  }
+
+  private clearSuccess() {
+    this.successMessage = '';
   }
 
   private async loadSessions() {
@@ -62,17 +76,7 @@ export class VibeTunnelApp extends LitElement {
     try {
       const response = await fetch('/api/sessions');
       if (response.ok) {
-        const sessionsData = await response.json();
-        this.sessions = sessionsData.map((session: any) => ({
-          id: session.id,
-          command: session.command,
-          workingDir: session.workingDir,
-          status: session.status,
-          exitCode: session.exitCode,
-          startedAt: session.startedAt,
-          lastModified: session.lastModified,
-          pid: session.pid,
-        }));
+        this.sessions = (await response.json()) as Session[];
         this.clearError();
       } else {
         this.showError('Failed to load sessions');
@@ -96,6 +100,7 @@ export class VibeTunnelApp extends LitElement {
 
   private async handleSessionCreated(e: CustomEvent) {
     const sessionId = e.detail.sessionId;
+    const message = e.detail.message;
 
     if (!sessionId) {
       this.showError('Session created but ID not found in response');
@@ -103,6 +108,13 @@ export class VibeTunnelApp extends LitElement {
     }
 
     this.showCreateModal = false;
+
+    // Check if this was a terminal spawn (not a web session)
+    if (message && message.includes('Terminal spawned successfully')) {
+      // Don't try to switch to the session - it's running in a terminal window
+      this.showSuccess('Terminal window opened successfully');
+      return;
+    }
 
     // Wait for session to appear in the list and then switch to it
     await this.waitForSessionAndSwitch(sessionId);
@@ -169,9 +181,9 @@ export class VibeTunnelApp extends LitElement {
 
   private async handleKillAll() {
     // Find all session cards and trigger their kill buttons
-    const sessionCards = this.querySelectorAll('session-card');
+    const sessionCards = this.querySelectorAll<SessionCard>('session-card');
 
-    sessionCards.forEach((card: any) => {
+    sessionCards.forEach((card: SessionCard) => {
       // Check if this session is running
       if (card.session && card.session.status === 'running') {
         // Find all buttons within this card and look for the kill button
@@ -185,6 +197,16 @@ export class VibeTunnelApp extends LitElement {
         });
       }
     });
+  }
+
+  private handleCleanExited() {
+    // Find the session list and call its cleanup method directly
+    const sessionList = this.querySelector('session-list') as HTMLElement & {
+      handleCleanupExited?: () => void;
+    };
+    if (sessionList && sessionList.handleCleanupExited) {
+      sessionList.handleCleanupExited();
+    }
   }
 
   // URL Routing methods
@@ -261,6 +283,18 @@ export class VibeTunnelApp extends LitElement {
             </div>
           `
         : ''}
+      ${this.successMessage
+        ? html`
+            <div class="fixed top-4 right-4 z-50">
+              <div class="bg-vs-link text-vs-bg px-4 py-2 rounded shadow-lg font-mono text-sm">
+                ${this.successMessage}
+                <button @click=${this.clearSuccess} class="ml-2 text-vs-bg hover:text-vs-muted">
+                  ✕
+                </button>
+              </div>
+            </div>
+          `
+        : ''}
 
       <!-- Main content -->
       ${this.currentView === 'session' && this.selectedSessionId
@@ -273,13 +307,14 @@ export class VibeTunnelApp extends LitElement {
             `
           )
         : html`
-            <div class="max-w-4xl mx-auto">
+            <div class="max-w-4xl mx-auto" style="background: black;">
               <app-header
                 .sessions=${this.sessions}
                 .hideExited=${this.hideExited}
                 @create-session=${this.handleCreateSession}
                 @hide-exited-change=${this.handleHideExitedChange}
                 @kill-all-sessions=${this.handleKillAll}
+                @clean-exited-sessions=${this.handleCleanExited}
               ></app-header>
               <session-list
                 .sessions=${this.sessions}

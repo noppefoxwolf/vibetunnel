@@ -9,71 +9,9 @@ struct VibeTunnelApp: App {
     var appDelegate
     @State private var sessionMonitor = SessionMonitor.shared
     @State private var serverMonitor = ServerMonitor.shared
-    
+
     init() {
-        // Check if launched with spawn-terminal command
-        let args = CommandLine.arguments
-        if args.count >= 3 && args[1] == "spawn-terminal" {
-            handleSpawnTerminalCommand(args[2])
-            exit(0)
-        }
-    }
-    
-    private func handleSpawnTerminalCommand(_ jsonString: String) {
-        guard let data = jsonString.data(using: .utf8) else {
-            print("Error: Invalid JSON string encoding")
-            exit(1)
-        }
-        
-        struct SpawnTerminalParams: Codable {
-            let command: [String]
-            let workingDir: String
-            let sessionId: String
-        }
-        
-        do {
-            let params = try JSONDecoder().decode(SpawnTerminalParams.self, from: data)
-            
-            // Initialize the app environment minimally for CLI usage
-            NSApplication.shared.setActivationPolicy(.accessory)
-            
-            // Use async approach with run loop to handle CLI invocation
-            let semaphore = DispatchSemaphore(value: 0)
-            var launchError: Error?
-            
-            DispatchQueue.main.async {
-                do {
-                    try TerminalLauncher.shared.launchTerminalSession(
-                        workingDirectory: params.workingDir,
-                        command: params.command.joined(separator: " "),
-                        sessionId: params.sessionId
-                    )
-                    print("Terminal spawned successfully for session: \(params.sessionId)")
-                } catch {
-                    launchError = error
-                    print("Error spawning terminal: \(error)")
-                }
-                semaphore.signal()
-            }
-            
-            // Wait for completion with timeout
-            let timeout = DispatchTime.now() + .seconds(5)
-            let result = semaphore.wait(timeout: timeout)
-            
-            if result == .timedOut {
-                print("Warning: Terminal spawn operation timed out")
-                exit(0) // Still exit successfully as the terminal may have been spawned
-            }
-            
-            if launchError != nil {
-                exit(1)
-            } else {
-                exit(0) // Exit successfully after spawning terminal
-            }
-        } catch {
-            print("Error parsing spawn-terminal parameters: \(error)")
-            exit(1)
-        }
+        // No special initialization needed
     }
 
     var body: some Scene {
@@ -100,10 +38,8 @@ struct VibeTunnelApp: App {
             }
             .commands {
                 CommandGroup(after: .appInfo) {
-                    SettingsLink {
-                        Text("About VibeTunnel")
-                    }
-                    .simultaneousGesture(TapGesture().onEnded {
+                    Button("About VibeTunnel") {
+                        SettingsOpener.openSettings()
                         // Navigate to About tab after settings opens
                         Task {
                             try? await Task.sleep(for: .milliseconds(100))
@@ -112,7 +48,7 @@ struct VibeTunnelApp: App {
                                 object: SettingsTab.about
                             )
                         }
-                    })
+                    }
                 }
             }
 
@@ -167,9 +103,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let showInDock = UserDefaults.standard.bool(forKey: "showInDock")
         NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
 
-        // Show welcome screen on first launch
-        let hasSeenWelcome = UserDefaults.standard.bool(forKey: "hasSeenWelcome")
-        if !hasSeenWelcome && !isRunningInTests && !isRunningInPreview {
+        // Show welcome screen when version changes
+        let storedWelcomeVersion = UserDefaults.standard.integer(forKey: AppConstants.UserDefaultsKeys.welcomeVersion)
+
+        // Show welcome if version is different from current
+        if storedWelcomeVersion < AppConstants.currentWelcomeVersion && !isRunningInTests && !isRunningInPreview {
             showWelcomeScreen()
         }
 
@@ -183,6 +121,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Notification.Name("checkForUpdates"),
             object: nil
         )
+
+        // Start the terminal spawn service
+        TerminalSpawnService.shared.start()
 
         // Initialize and start HTTP server using ServerManager
         Task {
@@ -278,6 +219,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // Stop session monitoring
         sessionMonitor.stopMonitoring()
+
+        // Stop terminal spawn service
+        TerminalSpawnService.shared.stop()
 
         // Stop HTTP server
         Task {

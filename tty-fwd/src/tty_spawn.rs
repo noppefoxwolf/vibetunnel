@@ -7,17 +7,27 @@ use std::os::unix::prelude::{AsRawFd, OpenOptionsExt, OsStrExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tempfile::NamedTempFile;
 
 use crate::protocol::{
     AsciinemaEvent, AsciinemaEventType, NotificationEvent, NotificationWriter, SessionInfo,
     StreamWriter,
 };
-use jiff::Timestamp;
 
+use anyhow::Error;
+use jiff::Timestamp;
 use nix::errno::Errno;
-use nix::libc;
-use nix::libc::{login_tty, O_NONBLOCK, TIOCGWINSZ, TIOCSWINSZ, VEOF};
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+use nix::libc::login_tty;
+use nix::libc::{O_NONBLOCK, TIOCGWINSZ, TIOCSWINSZ, VEOF};
+
+// Define TIOCSCTTY for platforms where it's not exposed by libc
+#[cfg(target_os = "linux")]
+const TIOCSCTTY: u64 = 0x540E;
 use nix::pty::{openpty, Winsize};
 use nix::sys::select::{select, FdSet};
 use nix::sys::signal::{killpg, Signal};
@@ -29,8 +39,80 @@ use nix::unistd::{
     close, dup2, execvp, fork, mkfifo, read, setsid, tcgetpgrp, write, ForkResult, Pid,
 };
 use signal_hook::consts::SIGWINCH;
+use tempfile::NamedTempFile;
 
 pub const DEFAULT_TERM: &str = "xterm-256color";
+
+/// Cross-platform implementation of `login_tty`
+/// On systems with `login_tty`, use it directly. Otherwise, implement manually.
+#[cfg(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+))]
+unsafe fn login_tty_compat(fd: i32) -> Result<(), Error> {
+    if login_tty(fd) == 0 {
+        Ok(())
+    } else {
+        Err(Error::msg("login_tty failed"))
+    }
+}
+
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "freebsd",
+    target_os = "netbsd",
+    target_os = "openbsd"
+)))]
+unsafe fn login_tty_compat(fd: i32) -> Result<(), Error> {
+    // Manual implementation of login_tty for Linux and other systems
+
+    // Create a new session
+    if libc::setsid() == -1 {
+        return Err(Error::msg("setsid failed"));
+    }
+
+    // Make the tty our controlling terminal
+    #[cfg(target_os = "linux")]
+    {
+        if libc::ioctl(fd, TIOCSCTTY as libc::c_ulong, 0) == -1 {
+            // Try without forcing
+            if libc::ioctl(fd, TIOCSCTTY as libc::c_ulong, 1) == -1 {
+                return Err(Error::msg("ioctl TIOCSCTTY failed"));
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Use the libc constant directly on non-Linux platforms
+        if libc::ioctl(fd, libc::TIOCSCTTY as libc::c_ulong, 0) == -1 {
+            // Try without forcing
+            if libc::ioctl(fd, libc::TIOCSCTTY as libc::c_ulong, 1) == -1 {
+                return Err(Error::msg("ioctl TIOCSCTTY failed"));
+            }
+        }
+    }
+
+    // Duplicate the tty to stdin/stdout/stderr
+    if libc::dup2(fd, 0) == -1 {
+        return Err(Error::msg("dup2 stdin failed"));
+    }
+    if libc::dup2(fd, 1) == -1 {
+        return Err(Error::msg("dup2 stdout failed"));
+    }
+    if libc::dup2(fd, 2) == -1 {
+        return Err(Error::msg("dup2 stderr failed"));
+    }
+
+    // Close the original fd if it's not one of the standard descriptors
+    if fd > 2 {
+        libc::close(fd);
+    }
+
+    Ok(())
+}
 
 /// Creates environment variables for `AsciinemaHeader`
 fn create_env_vars(term: &str) -> std::collections::HashMap<String, String> {
@@ -84,7 +166,7 @@ impl TtySpawn {
     }
 
     /// Sets a path as input file for stdin.
-    pub fn stdin_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, io::Error> {
+    pub fn stdin_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, Error> {
         let path = path.as_ref();
         mkfifo_atomic(path)?;
         // for the justification for write(true) see the explanation on
@@ -107,7 +189,7 @@ impl TtySpawn {
         &mut self,
         path: P,
         truncate: bool,
-    ) -> Result<&mut Self, io::Error> {
+    ) -> Result<&mut Self, Error> {
         let file = if truncate {
             File::options()
                 .create(true)
@@ -141,7 +223,7 @@ impl TtySpawn {
     }
 
     /// Sets a path as output file for notifications.
-    pub fn notification_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, io::Error> {
+    pub fn notification_path<P: AsRef<Path>>(&mut self, path: P) -> Result<&mut Self, Error> {
         let file = File::options().create(true).append(true).open(path)?;
 
         let notification_writer = NotificationWriter::new(file);
@@ -156,10 +238,8 @@ impl TtySpawn {
     }
 
     /// Spawns the application in the TTY.
-    pub fn spawn(&mut self) -> Result<i32, io::Error> {
-        Ok(spawn(
-            self.options.take().expect("builder only works once"),
-        )?)
+    pub fn spawn(&mut self) -> Result<i32, Error> {
+        spawn(self.options.take().expect("builder only works once"))
     }
 
     const fn options_mut(&mut self) -> &mut SpawnOptions {
@@ -185,7 +265,7 @@ pub fn create_session_info(
     name: String,
     cwd: String,
     term: String,
-) -> Result<(), io::Error> {
+) -> Result<(), Error> {
     let session_info = SessionInfo {
         cmdline,
         name,
@@ -195,6 +275,7 @@ pub fn create_session_info(
         exit_code: None,
         started_at: Some(Timestamp::now()),
         term,
+        spawn_type: "socket".to_string(),
     };
 
     let session_info_str = serde_json::to_string(&session_info)?;
@@ -214,7 +295,7 @@ fn update_session_status(
     pid: Option<u32>,
     status: &str,
     exit_code: Option<i32>,
-) -> Result<(), io::Error> {
+) -> Result<(), Error> {
     if let Ok(content) = std::fs::read_to_string(session_json_path) {
         if let Ok(mut session_info) = serde_json::from_str::<SessionInfo>(&content) {
             if let Some(pid) = pid {
@@ -243,7 +324,7 @@ fn update_session_status(
 /// It leaves stdin/stdout/stderr connected but also writes events into the
 /// optional `out` log file.  Additionally it can retrieve instructions from
 /// the given control socket.
-fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
+fn spawn(mut opts: SpawnOptions) -> Result<i32, Error> {
     // Create session info at the beginning if we have a session JSON path
     if let Some(ref session_json_path) = opts.session_json_path {
         // Get executable name for session name
@@ -274,8 +355,7 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
             session_name.clone(),
             current_dir.clone(),
             opts.term.clone(),
-        )
-        .map_err(|e| Errno::from_raw(e.raw_os_error().unwrap_or(libc::EIO)))?;
+        )?;
 
         // Send session started notification
         if let Some(ref mut notification_writer) = opts.notification_writer {
@@ -450,6 +530,22 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
             opts.session_json_path.as_deref(),
         )?;
 
+        // Send exit event to stream before updating session status
+        if let Some(ref mut stream_writer) = stream_writer {
+            let session_id = opts
+                .session_json_path
+                .as_ref()
+                .and_then(|p| p.file_stem())
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+            let exit_event = AsciinemaEvent {
+                time: stream_writer.elapsed_time(),
+                event_type: AsciinemaEventType::Output,
+                data: serde_json::json!(["exit", exit_code, session_id]).to_string(),
+            };
+            let _ = stream_writer.write_event(exit_event);
+        }
+
         // Update session status to exited with exit code
         if let Some(ref session_json_path) = opts.session_json_path {
             let _ = update_session_status(session_json_path, None, "exited", Some(exit_code));
@@ -499,10 +595,24 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
         }
 
         // Redirect stdin, stdout, stderr to the pty slave
+        use std::os::fd::{FromRawFd, OwnedFd};
         let slave_fd = pty.slave.as_raw_fd();
-        dup2(slave_fd, 0).expect("Failed to dup2 stdin");
-        dup2(slave_fd, 1).expect("Failed to dup2 stdout");
-        dup2(slave_fd, 2).expect("Failed to dup2 stderr");
+        
+        // Create OwnedFd for slave and standard file descriptors
+        let slave_owned_fd = unsafe { OwnedFd::from_raw_fd(slave_fd) };
+        let mut stdin_fd = unsafe { OwnedFd::from_raw_fd(0) };
+        let mut stdout_fd = unsafe { OwnedFd::from_raw_fd(1) };
+        let mut stderr_fd = unsafe { OwnedFd::from_raw_fd(2) };
+        
+        dup2(&slave_owned_fd, &mut stdin_fd).expect("Failed to dup2 stdin");
+        dup2(&slave_owned_fd, &mut stdout_fd).expect("Failed to dup2 stdout");
+        dup2(&slave_owned_fd, &mut stderr_fd).expect("Failed to dup2 stderr");
+        
+        // Forget the OwnedFd instances to prevent them from being closed
+        std::mem::forget(stdin_fd);
+        std::mem::forget(stdout_fd);
+        std::mem::forget(stderr_fd);
+        std::mem::forget(slave_owned_fd);
 
         // Close the original slave fd if it's not one of the standard fds
         if slave_fd > 2 {
@@ -510,7 +620,7 @@ fn spawn(mut opts: SpawnOptions) -> Result<i32, Errno> {
         }
     } else {
         unsafe {
-            login_tty(pty.slave.into_raw_fd());
+            login_tty_compat(pty.slave.into_raw_fd())?;
             // No stderr redirection since script_mode is always false
         }
     }
@@ -531,7 +641,7 @@ fn communication_loop(
     flush: bool,
     _notification_writer: Option<&mut NotificationWriter>,
     _session_json_path: Option<&Path>,
-) -> Result<i32, Errno> {
+) -> Result<i32, Error> {
     let mut buf = [0; 4096];
     let mut read_stdin = is_tty;
     let mut done = false;
@@ -574,11 +684,11 @@ fn communication_loop(
             }
             Err(Errno::EINTR | Errno::EAGAIN) => continue,
             Ok(_) => {}
-            Err(err) => return Err(err),
+            Err(err) => return Err(err.into()),
         }
 
         if read_fds.contains(stdin.as_fd()) {
-            match read(stdin.as_raw_fd(), &mut buf) {
+            match read(&stdin, &mut buf) {
                 Ok(0) => {
                     send_eof_sequence(master.as_fd());
                     read_stdin = false;
@@ -591,7 +701,7 @@ fn communication_loop(
                 Err(Errno::EIO) => {
                     done = true;
                 }
-                Err(err) => return Err(err),
+                Err(err) => return Err(err.into()),
             }
         }
         if let Some(ref f) = in_file {
@@ -599,9 +709,9 @@ fn communication_loop(
                 // use read() here so that we can handle EAGAIN/EINTR
                 // without this we might receive resource temporary unavailable
                 // see https://github.com/mitsuhiko/teetty/issues/3
-                match read(f.as_raw_fd(), &mut buf) {
+                match read(f, &mut buf) {
                     Ok(0) | Err(Errno::EAGAIN | Errno::EINTR) => {}
-                    Err(err) => return Err(err),
+                    Err(err) => return Err(err.into()),
                     Ok(n) => {
                         write_all(master.as_fd(), &buf[..n])?;
                     }
@@ -610,7 +720,7 @@ fn communication_loop(
         }
         if let Some(ref fd) = stderr {
             if read_fds.contains(fd.as_fd()) {
-                match read(fd.as_raw_fd(), &mut buf) {
+                match read(fd, &mut buf) {
                     Ok(0) | Err(_) => {}
                     Ok(n) => {
                         forward_and_log(io::stderr().as_fd(), &mut None, &buf[..n], flush)?;
@@ -619,7 +729,7 @@ fn communication_loop(
             }
         }
         if read_fds.contains(master.as_fd()) {
-            match read(master.as_raw_fd(), &mut buf) {
+            match read(&master, &mut buf) {
                 // on linux a closed tty raises EIO
                 Ok(0) | Err(Errno::EIO) => {
                     done = true;
@@ -628,7 +738,7 @@ fn communication_loop(
                     forward_and_log(io::stdout().as_fd(), &mut stream_writer, &buf[..n], flush)?;
                 }
                 Err(Errno::EAGAIN | Errno::EINTR) => {}
-                Err(err) => return Err(err),
+                Err(err) => return Err(err.into()),
             }
         }
     }
@@ -645,14 +755,9 @@ fn forward_and_log(
     stream_writer: &mut Option<&mut StreamWriter>,
     buf: &[u8],
     _flush: bool,
-) -> Result<(), Errno> {
+) -> Result<(), Error> {
     if let Some(writer) = stream_writer {
-        writer
-            .write_output(buf)
-            .map_err(|x| match x.raw_os_error() {
-                Some(errno) => Errno::from_raw(errno),
-                None => Errno::EINVAL,
-            })?;
+        writer.write_output(buf)?;
     }
     write_all(fd, buf)?;
     Ok(())
@@ -663,7 +768,7 @@ fn forward_winsize(
     master: BorrowedFd,
     stderr_master: Option<BorrowedFd>,
     stream_writer: &mut Option<&mut StreamWriter>,
-) -> Result<(), Errno> {
+) -> Result<(), Error> {
     if let Some(winsize) = get_winsize(io::stdin().as_fd()) {
         set_winsize(master, winsize).ok();
         if let Some(second_master) = stderr_master {
@@ -679,14 +784,9 @@ fn forward_winsize(
             let event = AsciinemaEvent {
                 time,
                 event_type: AsciinemaEventType::Resize,
-                data: format!("{}x{}", winsize.ws_col, winsize.ws_row),
+                data: format!("{col}x{row}", col = winsize.ws_col, row = winsize.ws_row),
             };
-            writer
-                .write_event(event)
-                .map_err(|x| match x.raw_os_error() {
-                    Some(errno) => Errno::from_raw(errno),
-                    None => Errno::EINVAL,
-                })?;
+            writer.write_event(event)?;
         }
     }
     Ok(())
@@ -701,7 +801,7 @@ fn get_winsize(fd: BorrowedFd) -> Option<Winsize> {
 }
 
 /// Sets the winsize
-fn set_winsize(fd: BorrowedFd, winsize: Winsize) -> Result<(), Errno> {
+fn set_winsize(fd: BorrowedFd, winsize: Winsize) -> Result<(), Error> {
     nix::ioctl_write_ptr_bad!(_set_window_size, TIOCSWINSZ, Winsize);
     unsafe { _set_window_size(fd.as_raw_fd(), &winsize) }?;
     Ok(())
@@ -717,7 +817,7 @@ fn send_eof_sequence(fd: BorrowedFd) {
 }
 
 /// Calls write in a loop until it's done.
-fn write_all(fd: BorrowedFd, mut buf: &[u8]) -> Result<(), Errno> {
+fn write_all(fd: BorrowedFd, mut buf: &[u8]) -> Result<(), Error> {
     while !buf.is_empty() {
         // we generally assume that EINTR/EAGAIN can't happen on write()
         let n = write(fd, buf)?;
@@ -727,10 +827,10 @@ fn write_all(fd: BorrowedFd, mut buf: &[u8]) -> Result<(), Errno> {
 }
 
 /// Creates a FIFO at the path if the file does not exist yet.
-fn mkfifo_atomic(path: &Path) -> Result<(), Errno> {
+fn mkfifo_atomic(path: &Path) -> Result<(), Error> {
     match mkfifo(path, Mode::S_IRUSR | Mode::S_IWUSR) {
         Ok(()) | Err(Errno::EEXIST) => Ok(()),
-        Err(err) => Err(err),
+        Err(err) => Err(err.into()),
     }
 }
 
@@ -749,7 +849,7 @@ fn monitor_detached_session(
     mut notification_writer: Option<NotificationWriter>,
     mut stream_writer: Option<StreamWriter>,
     stdin_file: Option<File>,
-) -> Result<(), Errno> {
+) -> Result<(), Error> {
     let mut buf = [0; 4096];
     let mut done = false;
 
@@ -769,14 +869,14 @@ fn monitor_detached_session(
             }
             Err(Errno::EINTR | Errno::EAGAIN) => continue,
             Ok(_) => {}
-            Err(err) => return Err(err),
+            Err(err) => return Err(err.into()),
         }
 
         if let Some(ref f) = stdin_file {
             if read_fds.contains(f.as_fd()) {
-                match read(f.as_raw_fd(), &mut buf) {
+                match read(f, &mut buf) {
                     Ok(0) | Err(Errno::EAGAIN | Errno::EINTR) => {}
-                    Err(err) => return Err(err),
+                    Err(err) => return Err(err.into()),
                     Ok(n) => {
                         write_all(master.as_fd(), &buf[..n])?;
                     }
@@ -785,7 +885,7 @@ fn monitor_detached_session(
         }
 
         if read_fds.contains(master.as_fd()) {
-            match read(master.as_raw_fd(), &mut buf) {
+            match read(&master, &mut buf) {
                 // on linux a closed tty raises EIO
                 Ok(0) | Err(Errno::EIO) => {
                     done = true;
@@ -800,18 +900,27 @@ fn monitor_detached_session(
                             event_type: AsciinemaEventType::Output,
                             data,
                         };
-                        writer
-                            .write_event(event)
-                            .map_err(|x| match x.raw_os_error() {
-                                Some(errno) => Errno::from_raw(errno),
-                                None => Errno::EINVAL,
-                            })?;
+                        writer.write_event(event)?;
                     }
                 }
                 Err(Errno::EAGAIN | Errno::EINTR) => {}
-                Err(err) => return Err(err),
+                Err(err) => return Err(err.into()),
             }
         }
+    }
+
+    // Send exit event to stream before updating session status
+    if let Some(ref mut stream_writer) = stream_writer {
+        let session_id = session_json_path
+            .and_then(|p| p.file_stem())
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+        let exit_event = AsciinemaEvent {
+            time: stream_writer.elapsed_time(),
+            event_type: AsciinemaEventType::Output,
+            data: serde_json::json!(["exit", 0, session_id]).to_string(),
+        };
+        let _ = stream_writer.write_event(exit_event);
     }
 
     // Update session status to exited

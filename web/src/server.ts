@@ -1,10 +1,10 @@
-import express from 'express';
+import express, { Response } from 'express';
 import { createServer } from 'http';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
 
 const app = express();
 const server = createServer(app);
@@ -35,27 +35,12 @@ if (!TTY_FWD_PATH) {
 const TTY_FWD_CONTROL_DIR =
   process.env.TTY_FWD_CONTROL_DIR || path.join(os.homedir(), '.vibetunnel/control');
 
-// Ensure control directory exists and is clean
-if (fs.existsSync(TTY_FWD_CONTROL_DIR)) {
-  // Clean existing directory contents
-  try {
-    const files = fs.readdirSync(TTY_FWD_CONTROL_DIR);
-    for (const file of files) {
-      const filePath = path.join(TTY_FWD_CONTROL_DIR, file);
-      const stat = fs.statSync(filePath);
-      if (stat.isDirectory()) {
-        fs.rmSync(filePath, { recursive: true, force: true });
-      } else {
-        fs.unlinkSync(filePath);
-      }
-    }
-    console.log(`Cleaned control directory: ${TTY_FWD_CONTROL_DIR}`);
-  } catch (_error) {
-    console.error('Error cleaning control directory:', _error);
-  }
-} else {
+// Ensure control directory exists
+if (!fs.existsSync(TTY_FWD_CONTROL_DIR)) {
   fs.mkdirSync(TTY_FWD_CONTROL_DIR, { recursive: true });
   console.log(`Created control directory: ${TTY_FWD_CONTROL_DIR}`);
+} else {
+  console.log(`Using existing control directory: ${TTY_FWD_CONTROL_DIR}`);
 }
 
 console.log(`Using tty-fwd at: ${TTY_FWD_PATH}`);
@@ -139,7 +124,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Hot reload functionality for development
-const hotReloadClients = new Set<any>();
+const hotReloadClients = new Set<WebSocket>();
 
 // === SESSION MANAGEMENT ===
 
@@ -165,6 +150,7 @@ app.get('/api/sessions', async (req, res) => {
         id: sessionId,
         command: sessionInfo.cmdline.join(' '),
         workingDir: sessionInfo.cwd,
+        name: sessionInfo.name,
         status: sessionInfo.status,
         exitCode: sessionInfo.exit_code,
         startedAt: sessionInfo.started_at,
@@ -188,13 +174,13 @@ app.get('/api/sessions', async (req, res) => {
 // Create new session
 app.post('/api/sessions', async (req, res) => {
   try {
-    const { command, workingDir } = req.body;
+    const { command, workingDir, name } = req.body;
 
     if (!command || !Array.isArray(command) || command.length === 0) {
       return res.status(400).json({ error: 'Command array is required and cannot be empty' });
     }
 
-    const sessionName = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const sessionName = name || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const cwd = resolvePath(workingDir, process.cwd());
 
     const args = [
@@ -361,8 +347,8 @@ app.post('/api/cleanup-exited', async (req, res) => {
 const activeStreams = new Map<
   string,
   {
-    clients: Set<any>;
-    tailProcess: any;
+    clients: Set<Response>;
+    tailProcess: ChildProcess;
     lastPosition: number;
   }
 >();
@@ -552,7 +538,7 @@ app.get('/api/sessions/:sessionId/stream', async (req, res) => {
   res.on('finish', cleanup);
 });
 
-// Get session snapshot (cast with adjusted timestamps for immediate playback)
+// Get session snapshot (optimized cast with only content after last clear)
 app.get('/api/sessions/:sessionId/snapshot', (req, res) => {
   const sessionId = req.params.sessionId;
   const streamOutPath = path.join(TTY_FWD_CONTROL_DIR, sessionId, 'stream-out');
@@ -566,9 +552,9 @@ app.get('/api/sessions/:sessionId/snapshot', (req, res) => {
     const lines = content.trim().split('\n');
 
     let header = null;
-    const events = [];
-    let startTime = null;
+    const allEvents = [];
 
+    // Parse all lines first
     for (const line of lines) {
       if (line.trim()) {
         try {
@@ -580,15 +566,59 @@ app.get('/api/sessions/:sessionId/snapshot', (req, res) => {
           }
           // Event line [timestamp, type, data]
           else if (Array.isArray(parsed) && parsed.length >= 3) {
-            if (startTime === null) {
-              startTime = parsed[0];
-            }
-            events.push([0, parsed[1], parsed[2]]);
+            allEvents.push(parsed);
           }
         } catch (_e) {
           // Skip invalid lines
         }
       }
+    }
+
+    // Find the last clear command (usually "\x1b[2J\x1b[3J\x1b[H" or similar)
+    let lastClearIndex = -1;
+    let lastResizeBeforeClear = null;
+
+    for (let i = allEvents.length - 1; i >= 0; i--) {
+      const event = allEvents[i];
+      if (event[1] === 'o' && event[2]) {
+        // Look for clear screen escape sequences
+        const data = event[2];
+        if (
+          data.includes('\x1b[2J') || // Clear entire screen
+          data.includes('\x1b[H\x1b[2J') || // Home cursor + clear screen
+          data.includes('\x1b[3J') || // Clear scrollback
+          data.includes('\x1bc') // Full reset
+        ) {
+          lastClearIndex = i;
+          break;
+        }
+      }
+    }
+
+    // Find the last resize event before the clear (if any)
+    if (lastClearIndex > 0) {
+      for (let i = lastClearIndex - 1; i >= 0; i--) {
+        const event = allEvents[i];
+        if (event[1] === 'r') {
+          lastResizeBeforeClear = event;
+          break;
+        }
+      }
+    }
+
+    // Build optimized event list
+    const optimizedEvents = [];
+
+    // Include last resize before clear if found
+    if (lastResizeBeforeClear) {
+      optimizedEvents.push([0, lastResizeBeforeClear[1], lastResizeBeforeClear[2]]);
+    }
+
+    // Include events after the last clear (or all events if no clear found)
+    const startIndex = lastClearIndex >= 0 ? lastClearIndex : 0;
+    for (let i = startIndex; i < allEvents.length; i++) {
+      const event = allEvents[i];
+      optimizedEvents.push([0, event[1], event[2]]);
     }
 
     // Build the complete cast
@@ -609,10 +639,19 @@ app.get('/api/sessions/:sessionId/snapshot', (req, res) => {
       );
     }
 
-    // Add all events
-    events.forEach((event) => {
+    // Add optimized events
+    optimizedEvents.forEach((event) => {
       cast.push(JSON.stringify(event));
     });
+
+    const originalSize = allEvents.length;
+    const optimizedSize = optimizedEvents.length;
+    const reduction =
+      originalSize > 0 ? (((originalSize - optimizedSize) / originalSize) * 100).toFixed(1) : '0';
+
+    console.log(
+      `Snapshot for ${sessionId}: ${originalSize} events → ${optimizedSize} events (${reduction}% reduction)`
+    );
 
     res.setHeader('Content-Type', 'text/plain');
     res.send(cast.join('\n'));
@@ -846,7 +885,7 @@ app.post('/api/mkdir', (req, res) => {
 
 // WebSocket for hot reload
 wss.on('connection', (ws, req) => {
-  const url = new URL(req.url!, `http://${req.headers.host}`);
+  const url = new URL(req.url ?? '', `http://${req.headers.host}`);
   const isHotReload = url.searchParams.get('hotReload') === 'true';
 
   if (isHotReload) {
@@ -870,7 +909,7 @@ if (process.env.NODE_ENV !== 'production') {
 
   watcher.on('change', (path: string) => {
     console.log(`File changed: ${path}`);
-    hotReloadClients.forEach((ws: any) => {
+    hotReloadClients.forEach((ws: WebSocket) => {
       if (ws.readyState === ws.OPEN) {
         ws.send(JSON.stringify({ type: 'reload' }));
       }
@@ -878,7 +917,13 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-server.listen(PORT, () => {
-  console.log(`VibeTunnel New Server running on http://localhost:${PORT}`);
-  console.log(`Using tty-fwd: ${TTY_FWD_PATH}`);
-});
+// Only start server if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+  server.listen(PORT, () => {
+    console.log(`VibeTunnel New Server running on http://localhost:${PORT}`);
+    console.log(`Using tty-fwd: ${TTY_FWD_PATH}`);
+  });
+}
+
+// Export for testing
+export { app, server, wss };
