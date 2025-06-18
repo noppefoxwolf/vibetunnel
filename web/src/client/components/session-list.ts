@@ -8,11 +8,13 @@ export interface Session {
   id: string;
   command: string;
   workingDir: string;
+  name?: string;
   status: 'running' | 'exited';
   exitCode?: number;
   startedAt: string;
   lastModified: string;
   pid?: number;
+  waiting?: boolean;
 }
 
 @customElement('session-list')
@@ -39,7 +41,7 @@ export class SessionList extends LitElement {
     window.location.search = `?session=${session.id}`;
   }
 
-  private async handleCleanupExited() {
+  public async handleCleanupExited() {
     if (this.cleaningExited) return;
 
     this.cleaningExited = true;
@@ -72,21 +74,7 @@ export class SessionList extends LitElement {
       : this.sessions;
 
     return html`
-      <div class="font-mono text-sm p-4">
-        <!-- Controls -->
-        ${!this.hideExited && this.sessions.filter((s) => s.status === 'exited').length > 0
-          ? html`
-              <div class="mb-4">
-                <button
-                  class="bg-vs-warning text-vs-bg hover:bg-vs-highlight font-mono px-4 py-2 border-none rounded transition-colors disabled:opacity-50"
-                  @click=${this.handleCleanupExited}
-                  ?disabled=${this.cleaningExited}
-                >
-                  ${this.cleaningExited ? '[~] CLEANING...' : 'CLEAN EXITED'}
-                </button>
-              </div>
-            `
-          : ''}
+      <div class="font-mono text-sm p-4" style="background: black;">
         ${filteredSessions.length === 0
           ? html`
               <div class="text-vs-muted text-center py-8">
@@ -98,7 +86,7 @@ export class SessionList extends LitElement {
               </div>
             `
           : html`
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 ${repeat(
                   filteredSessions,
                   (session) => session.id,

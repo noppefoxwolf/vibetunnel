@@ -32,23 +32,13 @@ struct DebugSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                HTTPServerSection(
+                ServerSection(
                     isServerHealthy: isServerHealthy,
                     isServerRunning: isServerRunning,
                     serverPort: serverPort,
                     lastError: lastError,
-                    toggleServer: toggleServer
-                )
-
-                ServerConfigurationSection(
                     serverModeString: $serverModeString,
-                    serverManager: serverManager
-                )
-
-                ServerInformationSection(
-                    isServerHealthy: isServerHealthy,
-                    isServerRunning: isServerRunning,
-                    serverPort: serverPort,
+                    serverManager: serverManager,
                     getCurrentServerMode: getCurrentServerMode
                 )
 
@@ -109,27 +99,7 @@ struct DebugSettingsView: View {
 
     // MARK: - Private Methods
 
-    private func toggleServer(_ shouldStart: Bool) async {
-        lastError = nil
-
-        if shouldStart {
-            do {
-                try await serverMonitor.startServer()
-                // Restart heartbeat monitoring after starting server
-                startHeartbeatMonitoring()
-            } catch {
-                lastError = error.localizedDescription
-            }
-        } else {
-            do {
-                try await serverMonitor.stopServer()
-                // Clear health status immediately when stopping
-                isServerHealthy = false
-            } catch {
-                lastError = error.localizedDescription
-            }
-        }
-    }
+    // toggleServer function removed - server now runs continuously with auto-recovery
 
     private func testEndpoint(_ endpoint: APIEndpoint) {
         isTesting = true
@@ -269,18 +239,21 @@ struct DebugSettingsView: View {
     }
 }
 
-// MARK: - HTTP Server Section
+// MARK: - Server Section
 
-private struct HTTPServerSection: View {
+private struct ServerSection: View {
     let isServerHealthy: Bool
     let isServerRunning: Bool
     let serverPort: Int
     let lastError: String?
-    let toggleServer: (Bool) async -> Void
+    @Binding var serverModeString: String
+    let serverManager: ServerManager
+    let getCurrentServerMode: () -> String
 
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
+                // Server Status
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
@@ -302,20 +275,15 @@ private struct HTTPServerSection: View {
 
                     Spacer()
 
-                    Toggle("", isOn: Binding(
-                        get: { isServerRunning },
-                        set: { newValue in
+                    // Show restart button for Rust mode when server is not healthy
+                    if serverModeString == ServerMode.rust.rawValue && (!isServerRunning || !isServerHealthy) {
+                        Button("Restart") {
                             Task {
-                                await toggleServer(newValue)
+                                await serverManager.manualRestart()
                             }
                         }
-                    ))
-                    .toggleStyle(.switch)
-                }
-
-                if isServerRunning, let serverURL = URL(string: "http://127.0.0.1:\(serverPort)") {
-                    Link("Open in Browser", destination: serverURL)
-                        .font(.caption)
+                        .buttonStyle(.borderedProminent)
+                    }
                 }
 
                 if let lastError {
@@ -323,29 +291,43 @@ private struct HTTPServerSection: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
-            }
-            .padding(.vertical, 4)
-        } header: {
-            Text("HTTP Server")
-                .font(.headline)
-        } footer: {
-            Text("The HTTP server provides REST API endpoints for terminal session management.")
-                .font(.caption)
-                .frame(maxWidth: .infinity)
-                .multilineTextAlignment(.center)
-        }
-    }
-}
 
-// MARK: - Server Configuration Section
+                Divider()
 
-private struct ServerConfigurationSection: View {
-    @Binding var serverModeString: String
-    let serverManager: ServerManager
+                // Server Information
+                VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent("Status") {
+                        HStack {
+                            Image(systemName: isServerHealthy ? "checkmark.circle.fill" :
+                                isServerRunning ? "exclamationmark.circle.fill" : "xmark.circle.fill"
+                            )
+                            .foregroundStyle(isServerHealthy ? .green :
+                                isServerRunning ? .orange : .secondary
+                            )
+                            Text(isServerHealthy ? "Healthy" :
+                                isServerRunning ? "Unhealthy" : "Stopped"
+                            )
+                        }
+                    }
 
-    var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
+                    LabeledContent("Port") {
+                        Text("\(serverPort)")
+                    }
+
+                    LabeledContent("Base URL") {
+                        if let serverURL = URL(string: "http://127.0.0.1:\(serverPort)") {
+                            Link("http://127.0.0.1:\(serverPort)", destination: serverURL)
+                                .font(.system(.body, design: .monospaced))
+                        } else {
+                            Text("http://127.0.0.1:\(serverPort)")
+                                .font(.system(.body, design: .monospaced))
+                        }
+                    }
+                }
+
+                Divider()
+
+                // Server Mode Configuration
                 HStack {
                     Text("Server Mode")
                     Spacer()
@@ -383,60 +365,17 @@ private struct ServerConfigurationSection: View {
                     }
                 }
             }
+            .padding(.vertical, 4)
         } header: {
-            Text("Server Configuration")
+            Text("HTTP Server")
                 .font(.headline)
         } footer: {
-            Text("Choose between the built-in Swift Hummingbird server or the Rust tty-fwd binary.")
-                .font(.caption)
-                .frame(maxWidth: .infinity)
-                .multilineTextAlignment(.center)
-        }
-    }
-}
-
-// MARK: - Server Information Section
-
-private struct ServerInformationSection: View {
-    let isServerHealthy: Bool
-    let isServerRunning: Bool
-    let serverPort: Int
-    let getCurrentServerMode: () -> String
-
-    var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                LabeledContent("Status") {
-                    HStack {
-                        Image(systemName: isServerHealthy ? "checkmark.circle.fill" :
-                            isServerRunning ? "exclamationmark.circle.fill" : "xmark.circle.fill"
-                        )
-                        .foregroundStyle(isServerHealthy ? .green :
-                            isServerRunning ? .orange : .secondary
-                        )
-                        Text(isServerHealthy ? "Healthy" :
-                            isServerRunning ? "Unhealthy" : "Stopped"
-                        )
-                    }
-                }
-
-                LabeledContent("Port") {
-                    Text("\(serverPort)")
-                }
-
-                LabeledContent("Base URL") {
-                    Text("http://127.0.0.1:\(serverPort)")
-                        .font(.system(.body, design: .monospaced))
-                }
-
-                LabeledContent("Mode") {
-                    Text(getCurrentServerMode())
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            Text("Server Information")
-                .font(.headline)
+            Text(
+                "The HTTP server provides REST API endpoints for terminal session management. Choose between the built-in Swift Hummingbird server or the Rust tty-fwd binary."
+            )
+            .font(.caption)
+            .frame(maxWidth: .infinity)
+            .multilineTextAlignment(.center)
         }
     }
 }
@@ -627,4 +566,3 @@ private struct DeveloperToolsSection: View {
         }
     }
 }
-

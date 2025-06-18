@@ -20,7 +20,7 @@ struct DashboardSettingsView: View {
     @State private var showPasswordFields = false
     @State private var passwordError: String?
     @State private var passwordSaved = false
-    
+
     @StateObject private var permissionManager = AppleScriptPermissionManager.shared
 
     @State private var ngrokAuthToken = ""
@@ -46,8 +46,6 @@ struct DashboardSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                PermissionsSection()
-                
                 SecuritySection(
                     passwordEnabled: $passwordEnabled,
                     password: $password,
@@ -179,6 +177,9 @@ struct DashboardSettingsView: View {
             await ServerManager.shared.restart()
             logger.info("Server restarted on port \(port)")
 
+            // Wait for server to be fully ready before restarting session monitor
+            try? await Task.sleep(for: .seconds(1))
+
             // Restart session monitoring with new port
             SessionMonitor.shared.stopMonitoring()
             SessionMonitor.shared.startMonitoring()
@@ -191,6 +192,9 @@ struct DashboardSettingsView: View {
             ServerManager.shared.bindAddress = accessMode.bindAddress
             await ServerManager.shared.restart()
             logger.info("Server restarted with bind address \(accessMode.bindAddress)")
+
+            // Wait for server to be fully ready before restarting session monitor
+            try? await Task.sleep(for: .seconds(1))
 
             // Restart session monitoring
             SessionMonitor.shared.stopMonitoring()
@@ -492,29 +496,35 @@ private struct AccessModeView: View {
                     if let ipAddress = localIPAddress {
                         Spacer()
 
-                        Button(action: {
-                            let urlString = "http://\(ipAddress):\(serverPort)"
-                            if let url = URL(string: urlString) {
-                                NSWorkspace.shared.open(url)
+                        Button(
+                            action: {
+                                let urlString = "http://\(ipAddress):\(serverPort)"
+                                if let url = URL(string: urlString) {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            },
+                            label: {
+                                Text("http://\(ipAddress):\(serverPort)")
+                                    .font(.caption)
+                                    .foregroundStyle(.blue)
+                                    .underline()
                             }
-                        }) {
-                            Text("http://\(ipAddress):\(serverPort)")
-                                .font(.caption)
-                                .foregroundStyle(.blue)
-                                .underline()
-                        }
+                        )
                         .buttonStyle(.plain)
                         .pointingHandCursor()
 
-                        Button(action: {
-                            let urlString = "http://\(ipAddress):\(serverPort)"
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(urlString, forType: .string)
-                        }) {
-                            Image(systemName: "doc.on.doc")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
+                        Button(
+                            action: {
+                                let urlString = "http://\(ipAddress):\(serverPort)"
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(urlString, forType: .string)
+                            },
+                            label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        )
                         .buttonStyle(.plain)
                         .help("Copy URL")
                     } else {
@@ -556,31 +566,37 @@ private struct PortConfigurationView: View {
                         }
 
                     VStack(spacing: 0) {
-                        Button(action: {
-                            if portNumber < 65_535 {
-                                portNumber += 1
-                                serverPort = String(portNumber)
-                                restartServerWithNewPort(portNumber)
+                        Button(
+                            action: {
+                                if portNumber < 65_535 {
+                                    portNumber += 1
+                                    serverPort = String(portNumber)
+                                    restartServerWithNewPort(portNumber)
+                                }
+                            },
+                            label: {
+                                Image(systemName: "chevron.up")
+                                    .font(.system(size: 10))
+                                    .frame(width: 16, height: 12)
                             }
-                        }) {
-                            Image(systemName: "chevron.up")
-                                .font(.system(size: 10))
-                                .frame(width: 16, height: 12)
-                        }
+                        )
                         .buttonStyle(.plain)
                         .help("Increase port number")
 
-                        Button(action: {
-                            if portNumber > 1 {
-                                portNumber -= 1
-                                serverPort = String(portNumber)
-                                restartServerWithNewPort(portNumber)
+                        Button(
+                            action: {
+                                if portNumber > 1 {
+                                    portNumber -= 1
+                                    serverPort = String(portNumber)
+                                    restartServerWithNewPort(portNumber)
+                                }
+                            },
+                            label: {
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 10))
+                                    .frame(width: 16, height: 12)
                             }
-                        }) {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10))
-                                .frame(width: 16, height: 12)
-                        }
+                        )
                         .buttonStyle(.plain)
                         .help("Decrease port number")
                     }
@@ -821,66 +837,6 @@ private struct NgrokErrorView: View {
             Text(error)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-    }
-}
-
-// MARK: - Permissions Section
-
-private struct PermissionsSection: View {
-    @StateObject private var permissionManager = AppleScriptPermissionManager.shared
-    
-    var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Terminal Automation")
-                            .font(.body)
-                        Text("Required to spawn terminal sessions from the dashboard")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    if permissionManager.hasPermission {
-                        HStack {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                            Text("Granted")
-                                .foregroundColor(.secondary)
-                        }
-                        .font(.caption)
-                    } else {
-                        Button("Accept Permission") {
-                            permissionManager.requestPermission()
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(permissionManager.isChecking)
-                    }
-                }
-                
-                if permissionManager.isChecking {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(0.7)
-                        Text("Checking permissions...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-        } header: {
-            Text("Permissions")
-                .font(.headline)
-        } footer: {
-            Text("AppleScript permission is required to open terminal applications when creating new sessions.")
-                .font(.caption)
-        }
-        .task {
-            await permissionManager.checkPermission()
         }
     }
 }
