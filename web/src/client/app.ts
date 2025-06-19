@@ -12,6 +12,9 @@ import './components/session-card.js';
 import type { Session } from './components/session-list.js';
 import type { SessionCard } from './components/session-card.js';
 
+// Import Tauri service
+import { TauriService, isTauri } from './services/tauri-service.js';
+
 @customElement('vibetunnel-app')
 export class VibeTunnelApp extends LitElement {
   // Disable shadow DOM to use Tailwind
@@ -30,12 +33,19 @@ export class VibeTunnelApp extends LitElement {
 
   private hotReloadWs: WebSocket | null = null;
 
+  private unlistenWindowClose?: () => void;
+
   connectedCallback() {
     super.connectedCallback();
     this.setupHotReload();
     this.loadSessions();
     this.startAutoRefresh();
     this.setupRouting();
+
+    // Setup Tauri-specific handlers
+    if (isTauri()) {
+      this.setupTauriHandlers();
+    }
   }
 
   disconnectedCallback() {
@@ -45,6 +55,18 @@ export class VibeTunnelApp extends LitElement {
     }
     // Clean up routing listeners
     window.removeEventListener('popstate', this.handlePopState);
+
+    // Clean up Tauri listeners
+    if (this.unlistenWindowClose) {
+      this.unlistenWindowClose();
+    }
+  }
+
+  private setupTauriHandlers() {
+    // Handle window close to hide instead of quit
+    this.unlistenWindowClose = TauriService.onWindowClose(() => {
+      TauriService.hideWindow();
+    });
   }
 
   private showError(message: string) {

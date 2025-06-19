@@ -1,0 +1,50 @@
+[package]
+name = "vibetunnel"
+version = "0.1.0"
+description = "VibeTunnel - Cross-platform terminal session manager"
+authors = ["VibeTunnel Team"]
+edition = "2021"
+
+[package.metadata.bundle]
+identifier = "com.vibetunnel.app"
+copyright = ""
+category = "DeveloperTool"
+short_description = ""
+long_description = ""
+
+[lib]
+name = "tauri_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.1.1", features = ["unstable", "devtools", "image-png", "image-ico", "tray-icon"] }
+tauri-plugin-shell = "2.1.0"
+tauri-plugin-dialog = "2.0.3"
+tauri-plugin-process = "2.0.1"
+tauri-plugin-fs = "2.0.3"
+tauri-plugin-http = "2.0.3"
+tauri-plugin-notification = "2.0.1"
+tauri-plugin-updater = "2.0.2"
+tauri-plugin-window-state = "2.0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2.0.1"
+
+# Platform-specific dependencies
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
