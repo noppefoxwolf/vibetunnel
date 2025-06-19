@@ -1,233 +1,236 @@
-// Settings window functionality
-const { electronAPI } = window;
-
-// Current settings
+"use strict";
+/// <reference path="../../types/electron.d.ts" />
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.initialize = initialize;
+exports.loadSettings = loadSettings;
+exports.applySettingsToUI = applySettingsToUI;
+exports.setupTabNavigation = setupTabNavigation;
+// Settings - TypeScript version with proper type safety
+console.log('Settings script starting (TypeScript version)...');
 let settings = {};
-
 // Initialize
-async function init() {
-  // Load current settings
-  settings = await electronAPI.getSettings();
-  
-  // Apply settings to UI
-  applySettingsToUI();
-  
-  // Setup tab switching
-  setupTabs();
-  
-  // Setup event handlers
-  setupEventHandlers();
-  
-  // Load system info
-  loadSystemInfo();
-  
-  // Platform-specific adjustments
-  adjustForPlatform();
+async function initialize() {
+    console.log('Initializing settings...');
+    if (!window.electronAPI) {
+        console.error('electronAPI not available!');
+        alert('Settings cannot load: electronAPI not available');
+        return;
+    }
+    try {
+        await loadSettings();
+        applySettingsToUI();
+        setupTabNavigation();
+        setupAllHandlers();
+    }
+    catch (error) {
+        console.error('Failed to initialize settings:', error);
+    }
 }
-
-// Apply settings to UI elements
+// Load settings
+async function loadSettings() {
+    try {
+        settings = await window.electronAPI.getSettings();
+        console.log('Settings loaded:', settings);
+    }
+    catch (error) {
+        console.error('Failed to load settings:', error);
+        settings = {};
+    }
+}
+// Helper function to safely get element by ID with type
+function getElementById(id) {
+    return document.getElementById(id);
+}
+// Apply settings to UI
 function applySettingsToUI() {
-  // General settings
-  const serverPortInput = document.getElementById('serverPort');
-  if (serverPortInput) {
-    serverPortInput.value = settings.serverPort !== undefined ? settings.serverPort : 4020;
-  }
-  
-  const launchAtLoginCheckbox = document.getElementById('launchAtLogin');
-  if (launchAtLoginCheckbox) {
-    launchAtLoginCheckbox.checked = settings.launchAtLogin === true;
-  }
-  
-  const showDockIconCheckbox = document.getElementById('showDockIcon');
-  if (showDockIconCheckbox) {
-    showDockIconCheckbox.checked = settings.showDockIcon === true;
-  }
-  
-  const autoCleanupCheckbox = document.getElementById('autoCleanupOnQuit');
-  if (autoCleanupCheckbox) {
-    autoCleanupCheckbox.checked = settings.autoCleanupOnQuit !== false; // Default true
-  }
-  
-  // Dashboard settings
-  const accessModeSelect = document.getElementById('accessMode');
-  if (accessModeSelect) {
-    accessModeSelect.value = settings.accessMode || 'localhost';
-  }
-  
-  const networkPasswordInput = document.getElementById('networkPassword');
-  if (networkPasswordInput) {
-    networkPasswordInput.value = settings.networkPassword || '';
-  }
-  
-  const ngrokAuthTokenInput = document.getElementById('ngrokAuthToken');
-  if (ngrokAuthTokenInput) {
-    ngrokAuthTokenInput.value = settings.ngrokAuthToken || '';
-  }
-  
-  // Advanced settings
-  const serverModeSelect = document.getElementById('serverMode');
-  if (serverModeSelect) {
-    serverModeSelect.value = settings.serverMode || 'rust';
-  }
-  
-  const updateChannelSelect = document.getElementById('updateChannel');
-  if (updateChannelSelect) {
-    updateChannelSelect.value = settings.updateChannel || 'stable';
-  }
-  
-  const debugModeCheckbox = document.getElementById('debugMode');
-  if (debugModeCheckbox) {
-    debugModeCheckbox.checked = settings.debugMode === true;
-  }
-  
-  // Show/hide conditional fields
-  updateConditionalFields();
+    // Type-safe element access
+    const serverPort = getElementById('serverPort');
+    if (serverPort)
+        serverPort.value = String(settings.serverPort || 4020);
+    const launchAtLogin = getElementById('launchAtLogin');
+    if (launchAtLogin)
+        launchAtLogin.checked = settings.launchAtLogin === true;
+    const showDockIcon = getElementById('showDockIcon');
+    if (showDockIcon)
+        showDockIcon.checked = settings.showDockIcon === true;
+    const autoCleanupOnQuit = getElementById('autoCleanupOnQuit');
+    if (autoCleanupOnQuit)
+        autoCleanupOnQuit.checked = settings.autoCleanupOnQuit !== false;
+    const passwordProtect = getElementById('passwordProtect');
+    if (passwordProtect)
+        passwordProtect.checked = !!settings.dashboardPassword;
+    const dashboardPort = getElementById('dashboardPort');
+    if (dashboardPort)
+        dashboardPort.value = String(settings.serverPort || 4020);
+    const accessMode = getElementById('accessMode');
+    if (accessMode)
+        accessMode.value = settings.accessMode || 'localhost';
+    const terminalApp = getElementById('terminalApp');
+    if (terminalApp)
+        terminalApp.value = settings.terminalApp || 'default';
+    const cleanupOnStartup = getElementById('cleanupOnStartup');
+    if (cleanupOnStartup)
+        cleanupOnStartup.checked = settings.cleanupOnStartup !== false;
+    const serverMode = getElementById('serverMode');
+    if (serverMode)
+        serverMode.value = settings.serverMode || 'rust';
+    const updateChannel = getElementById('updateChannel');
+    if (updateChannel)
+        updateChannel.value = settings.updateChannel || 'stable';
+    const debugMode = getElementById('debugMode');
+    if (debugMode)
+        debugMode.checked = settings.debugMode === true;
+    loadSystemInfo();
 }
-
-// Setup tab switching
-function setupTabs() {
-  const tabs = document.querySelectorAll('.tab');
-  const contents = document.querySelectorAll('.tab-content');
-  
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      const targetTab = tab.getAttribute('data-tab');
-      
-      // Update active states
-      tabs.forEach(t => t.classList.remove('active'));
-      contents.forEach(c => c.classList.remove('active'));
-      
-      tab.classList.add('active');
-      document.getElementById(targetTab).classList.add('active');
+// Tab navigation
+function setupTabNavigation() {
+    console.log('Setting up tab navigation...');
+    const tabs = document.querySelectorAll('.tab');
+    console.log(`Found ${tabs.length} tabs`);
+    tabs.forEach(tab => {
+        const tabId = tab.getAttribute('data-tab');
+        if (!tabId)
+            return;
+        tab.addEventListener('click', function (e) {
+            e.stopPropagation();
+            console.log(`Tab clicked: ${tabId}`);
+            // Remove active from all
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            // Add active to clicked
+            this.classList.add('active');
+            const content = getElementById(tabId);
+            if (content) {
+                content.classList.add('active');
+            }
+        });
     });
-  });
-}
-
-// Setup event handlers
-function setupEventHandlers() {
-  // General settings
-  document.getElementById('serverPort').addEventListener('change', async (e) => {
-    const port = parseInt(e.target.value);
-    if (port >= 1024 && port <= 65535) {
-      await electronAPI.setSetting('serverPort', port);
+    // Listen for external tab switches
+    if (window.electronAPI?.on) {
+        window.electronAPI.on('switch-tab', (tabName) => {
+            const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+            if (tab)
+                tab.click();
+        });
     }
-  });
-  
-  document.getElementById('launchAtLogin').addEventListener('change', async (e) => {
-    try {
-      await electronAPI.setSetting('launchAtLogin', e.target.checked);
-      console.log('Launch at login set to:', e.target.checked);
-    } catch (error) {
-      console.error('Failed to set launch at login:', error);
-      e.target.checked = !e.target.checked; // Revert on error
-    }
-  });
-  
-  document.getElementById('showDockIcon').addEventListener('change', async (e) => {
-    try {
-      await electronAPI.setSetting('showDockIcon', e.target.checked);
-      console.log('Show dock icon set to:', e.target.checked);
-    } catch (error) {
-      console.error('Failed to set show dock icon:', error);
-      e.target.checked = !e.target.checked; // Revert on error
-    }
-  });
-  
-  document.getElementById('autoCleanupOnQuit').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('autoCleanupOnQuit', e.target.checked);
-  });
-  
-  // Dashboard settings
-  document.getElementById('accessMode').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('accessMode', e.target.value);
-    updateConditionalFields();
-  });
-  
-  document.getElementById('networkPassword').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('networkPassword', e.target.value);
-  });
-  
-  document.getElementById('ngrokAuthToken').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('ngrokAuthToken', e.target.value);
-  });
-  
-  // Advanced settings
-  document.getElementById('serverMode').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('serverMode', e.target.value);
-  });
-  
-  document.getElementById('updateChannel').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('updateChannel', e.target.value);
-  });
-  
-  document.getElementById('debugMode').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('debugMode', e.target.checked);
-  });
-  
-  // Buttons
-  document.getElementById('openLogsBtn').addEventListener('click', () => {
-    electronAPI.openLogFile();
-  });
-  
-  document.getElementById('openRecordingsBtn').addEventListener('click', () => {
-    electronAPI.openRecordingsFolder();
-  });
-  
-  document.getElementById('checkUpdatesBtn').addEventListener('click', () => {
-    electronAPI.checkForUpdates();
-  });
-  
-  document.getElementById('openWebsiteBtn').addEventListener('click', () => {
-    electronAPI.openExternal('https://vibetunnel.com');
-  });
 }
-
-// Update conditional fields based on settings
-function updateConditionalFields() {
-  const accessMode = document.getElementById('accessMode').value;
-  
-  // Show/hide network password field
-  document.getElementById('networkPasswordGroup').style.display = 
-    accessMode === 'network' ? 'block' : 'none';
-  
-  // Show/hide ngrok token field
-  document.getElementById('ngrokTokenGroup').style.display = 
-    accessMode === 'ngrok' ? 'block' : 'none';
+// Setup all event handlers
+function setupAllHandlers() {
+    console.log('Setting up all handlers...');
+    setupButtonHandlers();
+    setupSettingHandlers();
 }
-
-// Load system information
+// Button handlers
+function setupButtonHandlers() {
+    console.log('Setting up button handlers...');
+    // Test Terminal button
+    const testTerminalBtn = getElementById('testTerminalBtn');
+    if (testTerminalBtn) {
+        testTerminalBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            console.log('Test Terminal clicked');
+            const terminalApp = getElementById('terminalApp')?.value || 'default';
+            try {
+                await window.electronAPI.openTerminal('echo "VibeTunnel terminal test successful!"', {
+                    terminal: terminalApp
+                });
+            }
+            catch (error) {
+                alert(`Failed to open terminal: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            }
+        });
+    }
+    // Install CLI button
+    const installCLIBtn = getElementById('installCLIBtn');
+    if (installCLIBtn) {
+        installCLIBtn.addEventListener('click', async function (e) {
+            e.preventDefault();
+            console.log('Install CLI clicked');
+            this.disabled = true;
+            this.textContent = 'Installing...';
+            try {
+                await window.electronAPI.installCLI();
+                alert('CLI tool installed successfully!');
+                this.textContent = 'Reinstall CLI Tool';
+            }
+            catch (error) {
+                alert(`Failed to install CLI: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                this.textContent = 'Install CLI Tool';
+            }
+            finally {
+                this.disabled = false;
+            }
+        });
+    }
+    // Other buttons follow similar pattern...
+}
+// Setting change handlers
+function setupSettingHandlers() {
+    console.log('Setting up setting handlers...');
+    // Server port
+    const serverPort = getElementById('serverPort');
+    if (serverPort) {
+        serverPort.addEventListener('change', async (e) => {
+            const target = e.target;
+            const port = parseInt(target.value);
+            if (isNaN(port) || port < 1024 || port > 65535) {
+                alert('Port must be between 1024 and 65535');
+                target.value = String(settings.serverPort || 4020);
+                return;
+            }
+            await window.electronAPI.setSetting('serverPort', port);
+            settings.serverPort = port;
+        });
+    }
+    // Checkboxes
+    const checkboxIds = [
+        'launchAtLogin', 'showDockIcon', 'autoCleanupOnQuit',
+        'cleanupOnStartup', 'debugMode'
+    ];
+    checkboxIds.forEach(id => {
+        const element = getElementById(id);
+        if (element) {
+            element.addEventListener('change', async (e) => {
+                const target = e.target;
+                try {
+                    await window.electronAPI.setSetting(String(id), target.checked);
+                    settings[id] = target.checked;
+                }
+                catch (error) {
+                    console.error(`Failed to update ${String(id)}:`, error);
+                    target.checked = !target.checked;
+                    alert(`Failed to update ${String(id)}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            });
+        }
+    });
+}
+// Load system info
 async function loadSystemInfo() {
-  const info = await electronAPI.getSystemInfo();
-  
-  document.getElementById('appVersion').textContent = info.version;
-  document.getElementById('platform').textContent = `${info.platform} (${info.arch})`;
-  document.getElementById('electronVersion').textContent = info.electron;
-  document.getElementById('nodeVersion').textContent = info.node;
-}
-
-// Platform-specific adjustments
-async function adjustForPlatform() {
-  const info = await electronAPI.getSystemInfo();
-  
-  // Disable Swift mode on non-macOS platforms
-  if (info.platform !== 'darwin') {
-    const swiftOption = document.getElementById('swiftOption');
-    swiftOption.disabled = true;
-    swiftOption.textContent = 'Swift (macOS only - unavailable)';
-    
-    // Force Rust mode if Swift was selected
-    if (settings.serverMode === 'swift') {
-      document.getElementById('serverMode').value = 'rust';
-      await electronAPI.setSetting('serverMode', 'rust');
+    try {
+        const info = await window.electronAPI.getSystemInfo();
+        const appVersion = getElementById('appVersion');
+        if (appVersion)
+            appVersion.textContent = info.version;
+        const platform = getElementById('platform');
+        if (platform)
+            platform.textContent = `${info.platform} (${info.arch})`;
+        const electronVersion = getElementById('electronVersion');
+        if (electronVersion)
+            electronVersion.textContent = info.electron;
+        const nodeVersion = getElementById('nodeVersion');
+        if (nodeVersion)
+            nodeVersion.textContent = info.node;
     }
-  }
-  
-  // Hide dock icon option on non-macOS platforms
-  if (info.platform !== 'darwin') {
-    const dockIconSetting = document.getElementById('showDockIcon').closest('.setting-group');
-    dockIconSetting.style.display = 'none';
-  }
+    catch (error) {
+        console.error('Failed to load system info:', error);
+    }
 }
-
-// Initialize when DOM is ready
-document.addEventListener('DOMContentLoaded', init);
+// Start initialization when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize);
+}
+else {
+    initialize();
+}
+//# sourceMappingURL=settings.js.map

@@ -25,12 +25,15 @@ body {
   background: #f6f6f6;
   border-right: 1px solid #e0e0e0;
   padding: 16px 0;
+  position: relative;
+  z-index: 10;
 }
 
 .tabs {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: block; /* Ensure it's a block element */
 }
 
 .tab {
@@ -41,6 +44,8 @@ body {
   transition: all 0.15s ease;
   font-size: 13px;
   position: relative;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .tab:hover {
@@ -68,6 +73,7 @@ body {
   margin-right: 8px;
   fill: #666;
   flex-shrink: 0;
+  pointer-events: none; /* Ensure SVG doesn't block clicks */
 }
 
 .tab.active .icon {
@@ -159,8 +165,7 @@ h2 {
 }
 
 .setting.checkbox {
-  display: flex;
-  align-items: flex-start;
+  display: block;
   cursor: pointer;
   padding: 4px 0;
 }
@@ -178,6 +183,7 @@ h2 {
   border-radius: 3px;
   transition: all 0.15s ease;
   position: relative;
+  float: left;
 }
 
 .setting.checkbox input[type="checkbox"]:checked {
@@ -208,6 +214,13 @@ h2 {
 .setting.checkbox .label {
   margin-bottom: 0;
   cursor: pointer;
+  display: block;
+  margin-left: 26px;
+}
+
+.setting.checkbox .help {
+  margin-left: 26px;
+  clear: both;
 }
 
 /* Buttons */
@@ -294,6 +307,29 @@ h2 {
 .credits p {
   color: #666;
   margin: 5px 0;
+}
+
+/* Fix for tab pointer events */
+.tabs {
+  pointer-events: auto;
+}
+
+.tab {
+  pointer-events: auto;
+  z-index: 10; /* Higher z-index */
+  position: relative; /* Ensure z-index works */
+}
+
+/* Ensure only specific child elements don't block clicks */
+.tab svg,
+.tab path {
+  pointer-events: none;
+}
+
+/* Debug: Make tabs more visible */
+.tab:hover {
+  background: #e8e8e8 !important;
+  cursor: pointer !important;
 }
 
 /* Dark mode support */
@@ -397,5 +433,17 @@ h2 {
   
   .setting.checkbox input[type="checkbox"]:hover {
     border-color: #0a84ff;
+  }
+  
+  #ngrokStatus {
+    background: #2a2a2a !important;
+    border: 1px solid #404040;
+  }
+  
+  #passwordFields input,
+  #ngrokConfig input {
+    background: #2a2a2a;
+    color: #e0e0e0;
+    border-color: #404040;
   }
 }

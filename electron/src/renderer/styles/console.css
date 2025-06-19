@@ -1,0 +1,262 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+  font-size: 12px;
+  color: #333;
+  background: #1e1e1e;
+  user-select: text;
+  overflow: hidden;
+}
+
+.console-window {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #2a2a2a;
+  border-bottom: 1px solid #404040;
+}
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-input {
+  width: 200px;
+  padding: 6px 10px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #0a84ff;
+}
+
+.filter-select {
+  padding: 6px 10px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border: 1px solid #404040;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #e0e0e0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.console-btn {
+  padding: 6px 14px;
+  background: #404040;
+  color: #e0e0e0;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.console-btn:hover {
+  background: #505050;
+}
+
+.console-btn:active {
+  background: #353535;
+}
+
+.console-body {
+  flex: 1;
+  overflow-y: auto;
+  background: #1e1e1e;
+  padding: 0;
+}
+
+.console-content {
+  padding: 8px;
+}
+
+.log-entry {
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  border-bottom: 1px solid #2a2a2a;
+  word-wrap: break-word;
+}
+
+.log-entry:hover {
+  background: #252525;
+}
+
+.log-timestamp {
+  color: #666;
+  margin-right: 12px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.log-level {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-right: 12px;
+  white-space: nowrap;
+}
+
+.log-level.error {
+  background: #f44336;
+  color: white;
+}
+
+.log-level.warning {
+  background: #ff9800;
+  color: white;
+}
+
+.log-level.info {
+  background: #2196f3;
+  color: white;
+}
+
+.log-level.debug {
+  background: #607d8b;
+  color: white;
+}
+
+.log-source {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #3a3a3a;
+  color: #999;
+  border-radius: 3px;
+  font-size: 10px;
+  margin-right: 12px;
+  white-space: nowrap;
+}
+
+.log-message {
+  color: #e0e0e0;
+  flex: 1;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', monospace;
+}
+
+/* Syntax highlighting for common patterns */
+.log-message .string {
+  color: #ce9178;
+}
+
+.log-message .number {
+  color: #b5cea8;
+}
+
+.log-message .keyword {
+  color: #569cd6;
+}
+
+.log-message .error-text {
+  color: #f44336;
+  font-weight: 500;
+}
+
+/* Loading state */
+.loading {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 40px;
+  color: #666;
+}
+
+/* Light mode support */
+@media (prefers-color-scheme: light) {
+  body {
+    background: #f5f5f5;
+    color: #333;
+  }
+  
+  .console-header {
+    background: #fff;
+    border-bottom-color: #e0e0e0;
+  }
+  
+  .search-input,
+  .filter-select {
+    background: #fff;
+    color: #333;
+    border-color: #ddd;
+  }
+  
+  .checkbox-label {
+    color: #333;
+  }
+  
+  .console-btn {
+    background: #007aff;
+    color: white;
+  }
+  
+  .console-btn:hover {
+    background: #0061cc;
+  }
+  
+  .console-body {
+    background: #fff;
+  }
+  
+  .log-entry {
+    border-bottom-color: #f0f0f0;
+  }
+  
+  .log-entry:hover {
+    background: #f5f5f5;
+  }
+  
+  .log-source {
+    background: #f0f0f0;
+    color: #666;
+  }
+  
+  .log-message {
+    color: #333;
+  }
+}

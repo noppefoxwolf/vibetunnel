@@ -35,6 +35,12 @@
           </svg>
           About
         </li>
+        <li class="tab" data-tab="debug" id="debugTab" style="display: none;">
+          <svg class="icon" viewBox="0 0 24 24">
+            <path d="M12,1.5A2.5,2.5 0 0,1 14.5,4A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 9.5,4A2.5,2.5 0 0,1 12,1.5M8.41,18.82C8,18.56 8,18.06 8.41,17.8L11,16.2V14A1,1 0 0,0 10,13H8A1,1 0 0,0 7,14V16.17C7,16.64 6.76,17.09 6.37,17.35L2.81,19.83C2.3,20.16 2,20.74 2,21.35V22H7.86C7.86,21.89 7.88,21.78 7.93,21.68L8.67,20.07L7,19M15.59,17.8C16,18.06 16,18.56 15.59,18.82L14.91,19.23L16.29,22H22V21.35C22,20.74 21.7,20.16 21.19,19.83L17.63,17.35C17.24,17.09 17,16.64 17,16.17V14A1,1 0 0,0 16,13H14A1,1 0 0,0 13,14V16.2L15.59,17.8M10.76,20L9.93,21.73C9.79,22.04 9.91,22.4 10.17,22.56C10.25,22.6 10.34,22.63 10.43,22.63C10.64,22.63 10.83,22.5 10.93,22.31L12,20.25L13.07,22.31C13.17,22.5 13.36,22.63 13.57,22.63C13.66,22.63 13.75,22.6 13.83,22.56C14.09,22.4 14.21,22.04 14.07,21.73L13.24,20M14.59,12H14V10H13V8H14V6.31C13.42,6.75 12.72,7 12,7C11.28,7 10.58,6.75 10,6.31V8H11V10H10V12H9.41C9.77,11.71 10.24,11.5 10.76,11.5H13.24C13.76,11.5 14.23,11.71 14.59,12Z"/>
+          </svg>
+          Debug
+        </li>
       </ul>
     </div>
     
@@ -81,31 +87,64 @@
         <h2>Dashboard Settings</h2>
         
         <div class="setting-group">
+          <label class="setting checkbox">
+            <input type="checkbox" id="passwordProtect">
+            <span class="label">Password protect dashboard</span>
+            <span class="help">Require a password to access the web dashboard</span>
+          </label>
+          
+          <div id="passwordFields" style="display: none; margin-top: 12px; margin-left: 26px;">
+            <input type="password" id="dashboardPassword" class="input" placeholder="Enter password" style="margin-bottom: 8px;">
+            <input type="password" id="confirmPassword" class="input" placeholder="Confirm password">
+            <button class="button" id="savePasswordBtn" style="margin-top: 8px;">Save Password</button>
+            <span id="passwordStatus" style="margin-left: 10px; color: #666;"></span>
+          </div>
+        </div>
+        
+        <div class="setting-group">
           <label class="setting">
             <span class="label">Access Mode</span>
             <select id="accessMode" class="select">
               <option value="localhost">Localhost Only</option>
-              <option value="network">Network (Password Protected)</option>
+              <option value="network">Network Access</option>
               <option value="ngrok">Ngrok Tunnel</option>
-              <option value="tailscale">Tailscale</option>
             </select>
             <span class="help">Control how the dashboard can be accessed</span>
           </label>
+          
+          <div id="networkInfo" style="display: none; margin-top: 12px;">
+            <p style="font-size: 12px; color: #666; margin: 0;">
+              Your local IP address: <strong id="localIP">detecting...</strong>
+            </p>
+          </div>
         </div>
         
-        <div class="setting-group" id="networkPasswordGroup" style="display: none;">
-          <label class="setting">
-            <span class="label">Network Password</span>
-            <input type="password" id="networkPassword" class="input" placeholder="Enter password">
-            <span class="help">Password required for network access</span>
+        <div class="setting-group" id="ngrokGroup" style="display: none;">
+          <label class="setting checkbox">
+            <input type="checkbox" id="enableNgrok">
+            <span class="label">Enable ngrok tunnel</span>
+            <span class="help">Create a public URL for remote access</span>
           </label>
+          
+          <div id="ngrokConfig" style="margin-top: 12px; margin-left: 26px;">
+            <label class="setting" style="margin-bottom: 12px;">
+              <span class="label">Auth Token</span>
+              <input type="password" id="ngrokAuthToken" class="input" placeholder="Enter ngrok auth token">
+              <span class="help">Get your token from <a href="#" id="ngrokLink">ngrok.com</a></span>
+            </label>
+            
+            <div id="ngrokStatus" style="margin-top: 12px; padding: 12px; background: #f5f5f5; border-radius: 4px; display: none;">
+              <p style="margin: 0 0 8px 0; font-size: 12px;">Tunnel Status: <strong id="tunnelStatus">Disconnected</strong></p>
+              <p style="margin: 0; font-size: 12px;">Public URL: <strong id="tunnelURL">-</strong> <button class="button" id="copyURLBtn" style="display: none;">Copy</button></p>
+            </div>
+          </div>
         </div>
         
-        <div class="setting-group" id="ngrokTokenGroup" style="display: none;">
+        <div class="setting-group">
           <label class="setting">
-            <span class="label">Ngrok Auth Token</span>
-            <input type="password" id="ngrokAuthToken" class="input" placeholder="Enter ngrok auth token">
-            <span class="help">Your ngrok authentication token</span>
+            <span class="label">Server Port</span>
+            <input type="number" id="dashboardPort" min="1024" max="65535" class="input">
+            <span class="help">The port for the web dashboard (requires restart)</span>
           </label>
         </div>
       </div>
@@ -113,6 +152,33 @@
       <!-- Advanced Tab -->
       <div class="tab-content" id="advanced">
         <h2>Advanced Settings</h2>
+        
+        <div class="setting-group">
+          <label class="setting">
+            <span class="label">Terminal Application</span>
+            <select id="terminalApp" class="select">
+              <option value="default">System Default</option>
+              <option value="terminal">Terminal.app</option>
+              <option value="iterm2">iTerm2</option>
+              <option value="ghostty">Ghostty</option>
+              <option value="warp">Warp</option>
+              <option value="alacritty">Alacritty</option>
+              <option value="hyper">Hyper</option>
+              <option value="wezterm">WezTerm</option>
+            </select>
+            <span class="help">Choose your preferred terminal application</span>
+          </label>
+          <button class="button" id="testTerminalBtn" style="margin-top: 8px;">Test Terminal</button>
+        </div>
+        
+        <div class="setting-group">
+          <label class="setting">
+            <span class="label">CLI Integration</span>
+            <span class="help">Install the 'vt' command for easy terminal access</span>
+          </label>
+          <button class="button" id="installCLIBtn">Install CLI Tool</button>
+          <span id="cliStatus" style="margin-left: 10px; color: #666;"></span>
+        </div>
         
         <div class="setting-group">
           <label class="setting">
@@ -138,6 +204,14 @@
         
         <div class="setting-group">
           <label class="setting checkbox">
+            <input type="checkbox" id="cleanupOnStartup">
+            <span class="label">Clean up old sessions on startup</span>
+            <span class="help">Remove terminated sessions when VibeTunnel starts</span>
+          </label>
+        </div>
+        
+        <div class="setting-group">
+          <label class="setting checkbox">
             <input type="checkbox" id="debugMode">
             <span class="label">Debug Mode</span>
             <span class="help">Enable detailed logging and debug features</span>
@@ -155,7 +229,7 @@
         <h2>About VibeTunnel</h2>
         
         <div class="about-content">
-          <img src="../assets/icon.png" class="app-icon" width="128" height="128">
+          <img src="../../assets/icon.png" class="app-icon" width="128" height="128">
           <h3>VibeTunnel</h3>
           <p class="version">Version <span id="appVersion">1.0.0</span></p>
           <p class="description">Turn any browser into a terminal</p>
@@ -175,6 +249,60 @@
             <h4>Credits</h4>
             <p>Built with Electron, xterm.js, and node-pty</p>
             <p>© 2025 VibeTunnel Team</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Debug Tab -->
+      <div class="tab-content" id="debug">
+        <h2>Debug Information</h2>
+        
+        <div class="setting-group">
+          <h3>HTTP Server</h3>
+          <div class="info-group">
+            <p><strong>Status:</strong> <span id="debugServerStatus">-</span></p>
+            <p><strong>Port:</strong> <span id="debugServerPort">-</span></p>
+            <p><strong>Base URL:</strong> <a href="#" id="debugServerURL">-</a></p>
+            <p><strong>Server Mode:</strong> <span id="debugServerMode">-</span></p>
+          </div>
+          <button class="button" id="restartServerBtn">Restart Server</button>
+        </div>
+        
+        <div class="setting-group">
+          <h3>API Endpoints</h3>
+          <div id="apiEndpoints" class="info-group">
+            <p>Loading...</p>
+          </div>
+        </div>
+        
+        <div class="setting-group">
+          <h3>Debug Options</h3>
+          <label class="setting">
+            <span class="label">Log Level</span>
+            <select id="logLevel" class="select">
+              <option value="error">Error</option>
+              <option value="warning">Warning</option>
+              <option value="info">Info</option>
+              <option value="debug">Debug</option>
+            </select>
+          </label>
+        </div>
+        
+        <div class="setting-group">
+          <h3>Developer Tools</h3>
+          <button class="button" id="showConsoleBtn">Show Console</button>
+          <button class="button" id="openDevToolsBtn">Open DevTools</button>
+          <button class="button" id="showInFinderBtn">Show in Finder</button>
+          <button class="button" id="showWelcomeBtn">Show Welcome</button>
+          <button class="button" id="purgeAllBtn" style="background: #f44336;">Purge All Settings</button>
+        </div>
+        
+        <div class="setting-group">
+          <h3>System Information</h3>
+          <div class="info-group">
+            <p><strong>App Path:</strong> <span id="appPath" style="font-size: 11px;">-</span></p>
+            <p><strong>User Data:</strong> <span id="userDataPath" style="font-size: 11px;">-</span></p>
+            <p><strong>Temp Dir:</strong> <span id="tempPath" style="font-size: 11px;">-</span></p>
           </div>
         </div>
       </div>

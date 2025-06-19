@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="10" height="10" viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
+  <!-- Green dot for server running -->
+  <circle id="green-dot" cx="5" cy="5" r="5" fill="#4CAF50"/>
+  
+  <!-- Red dot for server stopped -->
+  <circle id="red-dot" cx="5" cy="5" r="5" fill="#F44336" style="display:none"/>
+</svg>

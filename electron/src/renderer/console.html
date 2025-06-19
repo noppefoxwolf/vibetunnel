@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
+  <title>VibeTunnel Console</title>
+  <link rel="stylesheet" href="styles/console.css">
+</head>
+<body>
+  <div class="console-window">
+    <div class="console-header">
+      <div class="filters">
+        <input type="text" id="searchBox" placeholder="Filter logs..." class="search-input">
+        <select id="logLevelFilter" class="filter-select">
+          <option value="all">All Levels</option>
+          <option value="error">Error</option>
+          <option value="warning">Warning</option>
+          <option value="info">Info</option>
+          <option value="debug">Debug</option>
+        </select>
+        <label class="checkbox-label">
+          <input type="checkbox" id="autoScroll" checked>
+          Auto-scroll
+        </label>
+      </div>
+      <div class="actions">
+        <button class="console-btn" id="clearBtn">Clear</button>
+        <button class="console-btn" id="exportBtn">Export</button>
+      </div>
+    </div>
+    
+    <div class="console-body" id="consoleBody">
+      <div class="console-content" id="consoleContent">
+        <!-- Log entries will be added here -->
+      </div>
+    </div>
+  </div>
+  
+  <script src="scripts/console.js"></script>
+</body>
+</html>
