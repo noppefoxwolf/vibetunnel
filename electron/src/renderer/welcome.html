@@ -8,6 +8,16 @@
   <link rel="stylesheet" href="styles/welcome.css">
 </head>
 <body>
+  <!-- Custom titlebar -->
+  <div class="titlebar">
+    <div class="titlebar-controls">
+      <button class="titlebar-button close" id="closeBtn"></button>
+      <button class="titlebar-button minimize" id="minimizeBtn"></button>
+      <button class="titlebar-button maximize disabled"></button>
+    </div>
+    <div class="titlebar-title">Welcome to VibeTunnel</div>
+  </div>
+  
   <div class="welcome-container">
     <div class="pages">
       <!-- Page 1: Welcome -->
@@ -41,7 +51,7 @@
           </div>
         </div>
         
-        <button class="button primary" id="getStartedBtn">Get Started</button>
+        <button class="button primary large pulse" id="getStartedBtn">Get Started →</button>
       </div>
       
       <!-- Page 2: System Requirements -->
@@ -57,8 +67,8 @@
         </div>
         
         <div class="nav-buttons">
-          <button class="button secondary" id="backBtn1">Back</button>
-          <button class="button primary" id="continueBtn1">Continue</button>
+          <button class="button secondary" id="backBtn1">← Back</button>
+          <button class="button primary" id="continueBtn1">Continue →</button>
         </div>
       </div>
       
@@ -93,8 +103,8 @@
         </div>
         
         <div class="nav-buttons">
-          <button class="button secondary" id="backBtn2">Back</button>
-          <button class="button primary" id="continueBtn2">Continue</button>
+          <button class="button secondary" id="backBtn2">← Back</button>
+          <button class="button primary" id="continueBtn2">Continue →</button>
         </div>
       </div>
       
@@ -138,18 +148,18 @@
         </div>
         
         <div class="nav-buttons">
-          <button class="button secondary" id="backBtn3">Back</button>
-          <button class="button primary" id="finishBtn">Finish Setup</button>
+          <button class="button secondary" id="backBtn3">← Back</button>
+          <button class="button primary success" id="finishBtn">Finish Setup ✓</button>
         </div>
       </div>
     </div>
     
     <!-- Page indicators -->
     <div class="page-indicators">
-      <span class="indicator active"></span>
-      <span class="indicator"></span>
-      <span class="indicator"></span>
-      <span class="indicator"></span>
+      <span class="indicator active" data-page="1"></span>
+      <span class="indicator" data-page="2"></span>
+      <span class="indicator" data-page="3"></span>
+      <span class="indicator" data-page="4"></span>
     </div>
   </div>
   

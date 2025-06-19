@@ -71,6 +71,21 @@ function showPlatformInstructions(platform) {
     platformInfo.innerHTML = instructions[platform] || instructions.linux;
 }
 function setupEventListeners() {
+    // Custom titlebar controls
+    const closeBtn = document.getElementById('closeBtn');
+    const minimizeBtn = document.getElementById('minimizeBtn');
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            window.electronAPI.closeWindow();
+        });
+    }
+    
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', () => {
+            window.electronAPI.minimizeWindow();
+        });
+    }
     // Navigation buttons
     const navigationButtons = [
         { id: 'getStartedBtn', action: () => navigateToPage(2) },
@@ -106,6 +121,16 @@ function setupEventListeners() {
             launchAtLogin = target.checked;
         });
     }
+    
+    // Page indicators
+    const indicators = document.querySelectorAll('.indicator');
+    indicators.forEach((indicator, index) => {
+        indicator.addEventListener('click', () => {
+            if (index + 1 <= currentPage) {
+                navigateToPage(index + 1);
+            }
+        });
+    });
 }
 function navigateToPage(pageNumber) {
     if (pageNumber < 1 || pageNumber > totalPages)

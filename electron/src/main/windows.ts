@@ -32,12 +32,20 @@ export function createSettingsWindow(initialTab?: string): BrowserWindow {
 
   windows.settingsWindow = new BrowserWindow({
     ...defaultWindowOptions,
-    width: 700,
-    height: 600,
+    width: 900,
+    height: 680,
+    minWidth: 800,
+    minHeight: 600,
     title: 'VibeTunnel Preferences',
+    frame: false,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 20, y: 20 },
     resizable: true,
     minimizable: true,
     maximizable: true,
+    backgroundColor: '#000000',
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
   });
 
   windows.settingsWindow.loadFile(path.join(__dirname, '../renderer/settings.html'));
@@ -70,9 +78,15 @@ export function createWelcomeWindow(): BrowserWindow {
     width: 800,
     height: 600,
     title: 'Welcome to VibeTunnel',
-    resizable: true,
+    frame: false,
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 20, y: 20 },
+    resizable: false,
     minimizable: true,
-    maximizable: true,
+    maximizable: false,
+    backgroundColor: '#000000',
+    vibrancy: 'under-window',
+    visualEffectState: 'active',
   });
 
   windows.welcomeWindow.loadFile(path.join(__dirname, '../renderer/welcome.html'));

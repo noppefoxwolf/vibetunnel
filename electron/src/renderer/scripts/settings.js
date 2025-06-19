@@ -117,8 +117,35 @@ function setupTabNavigation() {
 // Setup all event handlers
 function setupAllHandlers() {
     console.log('Setting up all handlers...');
+    setupTitlebarButtons();
     setupButtonHandlers();
     setupSettingHandlers();
+}
+
+// Setup titlebar buttons
+function setupTitlebarButtons() {
+    const closeBtn = document.getElementById('closeBtn');
+    const minimizeBtn = document.getElementById('minimizeBtn');
+    const maximizeBtn = document.getElementById('maximizeBtn');
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            window.electronAPI.closeWindow();
+        });
+    }
+    
+    if (minimizeBtn) {
+        minimizeBtn.addEventListener('click', () => {
+            window.electronAPI.minimizeWindow();
+        });
+    }
+    
+    if (maximizeBtn) {
+        maximizeBtn.addEventListener('click', () => {
+            // Since the window is not maximizable, this button is disabled
+            // You could implement maximize functionality if needed
+        });
+    }
 }
 // Button handlers
 function setupButtonHandlers() {
