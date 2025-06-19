@@ -1,0 +1,266 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: #333;
+  background: #f5f5f5;
+  user-select: none;
+  overflow: hidden;
+}
+
+.window {
+  display: flex;
+  height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 200px;
+  background: #e8e8e8;
+  border-right: 1px solid #d0d0d0;
+  padding: 20px 0;
+}
+
+.tabs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.tab:hover {
+  background: #d8d8d8;
+}
+
+.tab.active {
+  background: #d0d0d0;
+}
+
+.tab .icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 10px;
+  fill: #666;
+}
+
+.tab.active .icon {
+  fill: #333;
+}
+
+/* Content Area */
+.content {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+h2 {
+  margin: 0 0 30px 0;
+  font-size: 24px;
+  font-weight: 300;
+}
+
+/* Settings */
+.setting-group {
+  margin-bottom: 25px;
+}
+
+.setting {
+  display: block;
+}
+
+.setting .label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 5px;
+}
+
+.setting .help {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-top: 5px;
+}
+
+.input, .select {
+  width: 100%;
+  max-width: 300px;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.input:focus, .select:focus {
+  outline: none;
+  border-color: #007aff;
+}
+
+.setting.checkbox {
+  display: flex;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.setting.checkbox input[type="checkbox"] {
+  margin-right: 10px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.setting.checkbox .label {
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+/* Buttons */
+.button {
+  padding: 8px 16px;
+  background: #007aff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  margin-right: 10px;
+}
+
+.button:hover {
+  background: #0061cc;
+}
+
+.button:active {
+  background: #004fb3;
+}
+
+.button-group {
+  margin-top: 20px;
+}
+
+/* About Tab */
+.about-content {
+  text-align: center;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.app-icon {
+  margin-bottom: 20px;
+}
+
+.about-content h3 {
+  font-size: 24px;
+  margin: 10px 0;
+  font-weight: 300;
+}
+
+.version {
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.description {
+  margin-bottom: 30px;
+}
+
+.info-group {
+  background: #f0f0f0;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.info-group p {
+  margin: 5px 0;
+}
+
+.credits {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.credits h4 {
+  font-size: 16px;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.credits p {
+  color: #666;
+  margin: 5px 0;
+}
+
+/* Platform specific styles */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #1e1e1e;
+    color: #e0e0e0;
+  }
+  
+  .sidebar {
+    background: #252525;
+    border-right-color: #3a3a3a;
+  }
+  
+  .tab:hover {
+    background: #2a2a2a;
+  }
+  
+  .tab.active {
+    background: #303030;
+  }
+  
+  .tab .icon {
+    fill: #999;
+  }
+  
+  .tab.active .icon {
+    fill: #e0e0e0;
+  }
+  
+  .input, .select {
+    background: #2a2a2a;
+    color: #e0e0e0;
+    border-color: #3a3a3a;
+  }
+  
+  .input:focus, .select:focus {
+    border-color: #0a84ff;
+  }
+  
+  .button {
+    background: #0a84ff;
+  }
+  
+  .button:hover {
+    background: #0968d3;
+  }
+  
+  .info-group {
+    background: #2a2a2a;
+  }
+}

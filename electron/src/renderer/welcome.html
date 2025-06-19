@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to VibeTunnel</title>
+  <link rel="stylesheet" href="styles/welcome.css">
+</head>
+<body>
+  <div class="welcome-container">
+    <div class="pages">
+      <!-- Page 1: Welcome -->
+      <div class="page active" id="page1">
+        <img src="../assets/icon.png" class="logo" width="128" height="128">
+        <h1>Welcome to VibeTunnel</h1>
+        <p class="subtitle">Turn any browser into a terminal</p>
+        
+        <div class="description">
+          <p>VibeTunnel lets you access your terminal sessions from any web browser. Monitor and control terminal sessions remotely with a beautiful web interface.</p>
+        </div>
+        
+        <div class="features">
+          <div class="feature">
+            <svg class="feature-icon" viewBox="0 0 24 24">
+              <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5C2,3.89 2.9,3 4,3H20M13,17V15H18V17H13M9.58,13L5.57,9H8.4L11.7,12.3C11.89,12.5 11.89,12.79 11.7,13L8.42,16.28H5.59L9.58,13Z"/>
+            </svg>
+            <span>Web-based terminal access</span>
+          </div>
+          <div class="feature">
+            <svg class="feature-icon" viewBox="0 0 24 24">
+              <path d="M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4M12,6A6,6 0 0,0 6,12A6,6 0 0,0 12,18A6,6 0 0,0 18,12A6,6 0 0,0 12,6M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8Z"/>
+            </svg>
+            <span>Session recording & playback</span>
+          </div>
+          <div class="feature">
+            <svg class="feature-icon" viewBox="0 0 24 24">
+              <path d="M12,1L3,5V11C3,16.55 6.84,21.74 12,23C17.16,21.74 21,16.55 21,11V5L12,1M12,5A3,3 0 0,1 15,8A3,3 0 0,1 12,11A3,3 0 0,1 9,8A3,3 0 0,1 12,5M17.13,17C15.92,18.85 14.11,20.24 12,20.92C9.89,20.24 8.08,18.85 6.87,17C6.53,16.5 6.24,16 6,15.47C6,13.82 8.71,12.47 12,12.47C15.29,12.47 18,13.79 18,15.47C17.76,16 17.47,16.5 17.13,17Z"/>
+            </svg>
+            <span>Secure access options</span>
+          </div>
+        </div>
+        
+        <button class="button primary" onclick="nextPage()">Get Started</button>
+      </div>
+      
+      <!-- Page 2: System Requirements -->
+      <div class="page" id="page2">
+        <h2>System Requirements</h2>
+        
+        <div class="requirements">
+          <p>VibeTunnel needs to interact with your terminal applications. On some systems, this requires additional permissions.</p>
+          
+          <div class="platform-info" id="platformInfo">
+            <!-- Platform-specific content will be inserted here -->
+          </div>
+        </div>
+        
+        <div class="nav-buttons">
+          <button class="button secondary" onclick="previousPage()">Back</button>
+          <button class="button primary" onclick="nextPage()">Continue</button>
+        </div>
+      </div>
+      
+      <!-- Page 3: Access Mode -->
+      <div class="page" id="page3">
+        <h2>Choose Access Mode</h2>
+        
+        <div class="access-modes">
+          <label class="access-mode">
+            <input type="radio" name="accessMode" value="localhost" checked>
+            <div class="mode-content">
+              <h3>Localhost Only</h3>
+              <p>Access VibeTunnel only from this computer. Most secure option.</p>
+            </div>
+          </label>
+          
+          <label class="access-mode">
+            <input type="radio" name="accessMode" value="network">
+            <div class="mode-content">
+              <h3>Local Network</h3>
+              <p>Access from any device on your local network with password protection.</p>
+            </div>
+          </label>
+          
+          <label class="access-mode">
+            <input type="radio" name="accessMode" value="ngrok">
+            <div class="mode-content">
+              <h3>Ngrok Tunnel</h3>
+              <p>Access from anywhere via secure ngrok tunnel (requires ngrok account).</p>
+            </div>
+          </label>
+        </div>
+        
+        <div class="nav-buttons">
+          <button class="button secondary" onclick="previousPage()">Back</button>
+          <button class="button primary" onclick="nextPage()">Continue</button>
+        </div>
+      </div>
+      
+      <!-- Page 4: Setup -->
+      <div class="page" id="page4">
+        <h2>Quick Setup</h2>
+        
+        <div class="setup-content">
+          <p>VibeTunnel is now configured and ready to use!</p>
+          
+          <div class="setup-steps">
+            <div class="step">
+              <span class="step-number">1</span>
+              <div class="step-content">
+                <h4>Install the CLI tool</h4>
+                <p>The <code>vt</code> command will be installed to control terminal sessions.</p>
+              </div>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">2</span>
+              <div class="step-content">
+                <h4>Access the dashboard</h4>
+                <p>Open your browser to <code>http://localhost:4020</code></p>
+              </div>
+            </div>
+            
+            <div class="step">
+              <span class="step-number">3</span>
+              <div class="step-content">
+                <h4>Start a session</h4>
+                <p>Run <code>vt</code> in any terminal to start monitoring</p>
+              </div>
+            </div>
+          </div>
+          
+          <label class="checkbox-option">
+            <input type="checkbox" id="launchAtLogin">
+            <span>Launch VibeTunnel at login</span>
+          </label>
+        </div>
+        
+        <div class="nav-buttons">
+          <button class="button secondary" onclick="previousPage()">Back</button>
+          <button class="button primary" onclick="finishSetup()">Finish Setup</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Page indicators -->
+    <div class="page-indicators">
+      <span class="indicator active"></span>
+      <span class="indicator"></span>
+      <span class="indicator"></span>
+      <span class="indicator"></span>
+    </div>
+  </div>
+  
+  <script src="scripts/welcome.js"></script>
+</body>
+</html>

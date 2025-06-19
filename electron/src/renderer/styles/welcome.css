@@ -1,0 +1,339 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  color: #333;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  user-select: none;
+  overflow: hidden;
+}
+
+.welcome-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  align-items: center;
+  justify-content: center;
+}
+
+.pages {
+  width: 100%;
+  max-width: 600px;
+  height: 500px;
+  position: relative;
+}
+
+.page {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: white;
+  border-radius: 12px;
+  padding: 40px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s ease;
+}
+
+.page.active {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.page.previous {
+  transform: translateX(-100%);
+}
+
+/* Page 1: Welcome */
+.logo {
+  display: block;
+  margin: 0 auto 20px;
+}
+
+h1 {
+  text-align: center;
+  font-size: 32px;
+  font-weight: 300;
+  margin: 0 0 10px 0;
+}
+
+.subtitle {
+  text-align: center;
+  font-size: 18px;
+  color: #666;
+  margin: 0 0 30px 0;
+}
+
+.description {
+  text-align: center;
+  margin-bottom: 40px;
+  line-height: 1.6;
+}
+
+.features {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 40px;
+}
+
+.feature {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 150px;
+}
+
+.feature-icon {
+  width: 48px;
+  height: 48px;
+  fill: #667eea;
+  margin-bottom: 10px;
+}
+
+.feature span {
+  font-size: 12px;
+  color: #666;
+}
+
+/* Buttons */
+.button {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.button.primary {
+  background: #667eea;
+  color: white;
+  display: block;
+  margin: 0 auto;
+}
+
+.button.primary:hover {
+  background: #5a67d8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.button.secondary {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.button.secondary:hover {
+  background: #d0d0d0;
+}
+
+.nav-buttons {
+  position: absolute;
+  bottom: 40px;
+  left: 40px;
+  right: 40px;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Page 2: System Requirements */
+h2 {
+  font-size: 28px;
+  font-weight: 300;
+  margin: 0 0 30px 0;
+}
+
+.requirements {
+  margin-bottom: 60px;
+}
+
+.platform-info {
+  background: #f8f8f8;
+  padding: 20px;
+  border-radius: 8px;
+  margin-top: 20px;
+}
+
+.platform-info h3 {
+  margin: 0 0 10px 0;
+  font-size: 18px;
+}
+
+.platform-info p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.permission-step {
+  margin: 15px 0;
+  padding-left: 20px;
+}
+
+/* Page 3: Access Mode */
+.access-modes {
+  margin: 40px 0;
+}
+
+.access-mode {
+  display: block;
+  margin-bottom: 20px;
+  cursor: pointer;
+}
+
+.access-mode input[type="radio"] {
+  display: none;
+}
+
+.mode-content {
+  padding: 20px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+
+.access-mode input[type="radio"]:checked + .mode-content {
+  border-color: #667eea;
+  background: #f7f9ff;
+}
+
+.mode-content h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+}
+
+.mode-content p {
+  margin: 0;
+  color: #666;
+}
+
+/* Page 4: Setup */
+.setup-content {
+  margin: 30px 0;
+}
+
+.setup-steps {
+  margin: 30px 0;
+}
+
+.step {
+  display: flex;
+  margin-bottom: 25px;
+}
+
+.step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: #667eea;
+  color: white;
+  border-radius: 50%;
+  font-weight: 600;
+  margin-right: 20px;
+  flex-shrink: 0;
+}
+
+.step-content h4 {
+  margin: 0 0 5px 0;
+  font-size: 16px;
+}
+
+.step-content p {
+  margin: 0;
+  color: #666;
+}
+
+code {
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 13px;
+}
+
+.checkbox-option {
+  display: flex;
+  align-items: center;
+  margin-top: 30px;
+  cursor: pointer;
+}
+
+.checkbox-option input[type="checkbox"] {
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+/* Page indicators */
+.page-indicators {
+  display: flex;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.indicator {
+  width: 8px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  transition: all 0.3s;
+}
+
+.indicator.active {
+  width: 24px;
+  background: white;
+  border-radius: 4px;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  body {
+    background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+  }
+  
+  .page {
+    background: #2d3748;
+    color: #e0e0e0;
+  }
+  
+  h1, h2, h3, h4 {
+    color: #e0e0e0;
+  }
+  
+  .subtitle, .feature span, .mode-content p, .step-content p {
+    color: #a0a0a0;
+  }
+  
+  .platform-info {
+    background: #1a202c;
+  }
+  
+  .mode-content {
+    border-color: #4a5568;
+  }
+  
+  .access-mode input[type="radio"]:checked + .mode-content {
+    background: #2c3140;
+  }
+  
+  code {
+    background: #1a202c;
+    color: #e0e0e0;
+  }
+  
+  .button.secondary {
+    background: #4a5568;
+    color: #e0e0e0;
+  }
+  
+  .button.secondary:hover {
+    background: #5a6578;
+  }
+}
