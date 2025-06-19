@@ -460,6 +460,24 @@ function setupIPCHandlers(): void {
         });
       }
       break;
+    case 'serverMode':
+      // Restart server with new mode
+      if (serverManager?.getStatus().running) {
+        console.log('[IPC] Server mode changed, restarting server...');
+        (async () => {
+          try {
+            await stopServer();
+            // Dispose of the old server manager
+            serverManager = null;
+            // Start with new mode
+            await startServer();
+          } catch (error) {
+            console.error('[IPC] Failed to restart server with new mode:', error);
+            dialog.showErrorBox('Server Error', `Failed to restart server: ${error}`);
+          }
+        })();
+      }
+      break;
     }
     
     return success;

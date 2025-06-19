@@ -254,9 +254,10 @@
             <h3>Server Implementation</h3>
             <label class="setting">
               <span class="label">Server Mode</span>
-              <span class="help">Using Rust server</span>
-              <select id="serverMode" class="select" disabled>
-                <option value="rust">Rust</option>
+              <span class="help">Choose server implementation</span>
+              <select id="serverMode" class="select">
+                <option value="rust">Rust (tty-fwd)</option>
+                <option value="go">Go (vibetunnel)</option>
               </select>
             </label>
           </div>

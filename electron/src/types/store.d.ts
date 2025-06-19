@@ -12,7 +12,7 @@ export interface StoreSchema {
   accessMode: 'localhost' | 'network' | 'ngrok';
   terminalApp: string;
   cleanupOnStartup: boolean;
-  serverMode: 'rust';
+  serverMode: 'rust' | 'go';
   updateChannel: 'stable' | 'beta';
   debugMode: boolean;
   firstRun: boolean;

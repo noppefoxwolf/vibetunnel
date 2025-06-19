@@ -12,7 +12,7 @@ interface Settings {
   accessMode?: 'localhost' | 'network' | 'ngrok';
   terminalApp?: string;
   cleanupOnStartup?: boolean;
-  serverMode?: 'rust' | 'node';
+  serverMode?: 'rust' | 'go';
   updateChannel?: 'stable' | 'beta';
   debugMode?: boolean;
   [key: string]: any; // Allow dynamic properties
@@ -225,6 +225,29 @@ function setupSettingHandlers(): void {
         } catch (error) {
           console.error(`Failed to update ${String(id)}:`, error);
           target.checked = !target.checked;
+          alert(`Failed to update ${String(id)}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      });
+    }
+  });
+  
+  // Select elements
+  const selectIds: string[] = [
+    'accessMode', 'terminalApp', 'serverMode', 'updateChannel'
+  ];
+  
+  selectIds.forEach(id => {
+    const element = getElementById<HTMLSelectElement>(id);
+    if (element) {
+      element.addEventListener('change', async (e) => {
+        const target = e.target as HTMLSelectElement;
+        try {
+          await window.electronAPI.setSetting(String(id), target.value);
+          settings[id] = target.value;
+        } catch (error) {
+          console.error(`Failed to update ${String(id)}:`, error);
+          // Revert to previous value
+          target.value = settings[id] || '';
           alert(`Failed to update ${String(id)}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
       });

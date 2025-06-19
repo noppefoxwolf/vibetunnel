@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Build script for tty-fwd server binaries
+# Build script for server binaries (both Rust tty-fwd and Go vibetunnel)
 # This script should be run from the electron directory
 
 set -e
 
-echo "Building tty-fwd server binaries..."
+echo "Building server binaries..."
 
 # Colors for output
 RED='\033[0;31m'
@@ -25,13 +25,23 @@ if ! command -v cargo &> /dev/null; then
     exit 1
 fi
 
+# Check if Go is installed
+if ! command -v go &> /dev/null; then
+    echo -e "${RED}Error: Go is not installed. Please install from https://go.dev/${NC}"
+    exit 1
+fi
+
 # Get the current platform
 PLATFORM=$(uname -s)
 ARCH=$(uname -m)
 
 echo "Detected platform: $PLATFORM $ARCH"
 
-# Navigate to the parent directory where Rust project should be
+# Save electron directory path
+ELECTRON_DIR=$(pwd)
+
+# Build Rust tty-fwd binary
+echo -e "\n${YELLOW}Building Rust tty-fwd server...${NC}"
 cd ..
 
 # Check if Cargo.toml exists
@@ -81,12 +91,50 @@ case "$PLATFORM" in
         ;;
 esac
 
-echo -e "${GREEN}Build completed successfully!${NC}"
+# Build Go vibetunnel binary
+echo -e "\n${YELLOW}Building Go vibetunnel server...${NC}"
+cd "$ELECTRON_DIR"/../linux
+
+if [ ! -f "go.mod" ]; then
+    echo -e "${RED}Error: Cannot find Go project in linux directory${NC}"
+    exit 1
+fi
+
+# Build for the current platform
+case "$PLATFORM" in
+    Darwin)
+        if [ "$ARCH" = "arm64" ]; then
+            echo "Building Go server for macOS ARM64..."
+            GOOS=darwin GOARCH=arm64 go build -o "$ELECTRON_DIR/bin/darwin-arm64/vibetunnel" ./cmd/vibetunnel
+            echo -e "${GREEN}✓ Built Go server for macOS ARM64${NC}"
+        else
+            echo "Building Go server for macOS x64..."
+            GOOS=darwin GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/darwin-x64/vibetunnel" ./cmd/vibetunnel
+            echo -e "${GREEN}✓ Built Go server for macOS x64${NC}"
+        fi
+        ;;
+    Linux)
+        echo "Building Go server for Linux x64..."
+        GOOS=linux GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/linux-x64/vibetunnel" ./cmd/vibetunnel
+        echo -e "${GREEN}✓ Built Go server for Linux x64${NC}"
+        ;;
+    MINGW*|MSYS*|CYGWIN*)
+        echo "Building Go server for Windows x64..."
+        GOOS=windows GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/win32-x64/vibetunnel.exe" ./cmd/vibetunnel
+        echo -e "${GREEN}✓ Built Go server for Windows x64${NC}"
+        ;;
+    *)
+        echo -e "${RED}Error: Unsupported platform $PLATFORM${NC}"
+        exit 1
+        ;;
+esac
+
+echo -e "\n${GREEN}All server binaries built successfully!${NC}"
 
 # Return to electron directory
-cd electron
+cd "$ELECTRON_DIR"
 
-# Make sure the binary is executable (on Unix systems)
+# Make sure the binaries are executable (on Unix systems)
 if [ "$PLATFORM" != "MINGW" ] && [ "$PLATFORM" != "MSYS" ] && [ "$PLATFORM" != "CYGWIN" ]; then
     chmod +x bin/*/*
 fi

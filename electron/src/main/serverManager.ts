@@ -15,13 +15,13 @@ interface ServerManagerEvents {
 export class VibeTunnelServerManager extends EventEmitter implements ServerManager {
   private serverProcess: ChildProcess | null = null;
   private serverPort: number;
-  private serverMode: 'rust' | 'node';
+  private serverMode: 'rust' | 'go';
   private sessions: Map<string, Session> = new Map();
   private pingInterval: NodeJS.Timeout | null = null;
   private isRunning = false;
   private startTime: Date | null = null;
 
-  constructor(port: number = 4020, mode: 'rust' | 'node' = 'rust') {
+  constructor(port: number = 4020, mode: 'rust' | 'go' = 'rust') {
     super();
     this.serverPort = port;
     this.serverMode = mode;
@@ -42,7 +42,7 @@ export class VibeTunnelServerManager extends EventEmitter implements ServerManag
 
       console.log(`Starting ${this.serverMode} server on port ${this.serverPort}...`);
       
-      const args = ['--port', this.serverPort.toString()];
+      const args = this.getServerArgs();
       
       this.serverProcess = spawn(serverPath, args, {
         cwd: app.getPath('userData'),
@@ -188,7 +188,13 @@ export class VibeTunnelServerManager extends EventEmitter implements ServerManag
     const platform = process.platform;
     const arch = process.arch;
     
-    let binaryName = 'vibetunnel-server';
+    let binaryName: string;
+    if (this.serverMode === 'rust') {
+      binaryName = 'tty-fwd';
+    } else {
+      binaryName = 'vibetunnel';
+    }
+    
     if (platform === 'win32') {
       binaryName += '.exe';
     }
@@ -204,6 +210,25 @@ export class VibeTunnelServerManager extends EventEmitter implements ServerManag
     // In production, look in resources
     const resourcesPath = process.resourcesPath || app.getAppPath();
     return path.join(resourcesPath, 'bin', `${platform}-${arch}`, binaryName);
+  }
+
+  private getServerArgs(): string[] {
+    const webPath = path.join(__dirname, '../../../web/public');
+    
+    if (this.serverMode === 'rust') {
+      return [
+        '--port', this.serverPort.toString(),
+        '--static-path', webPath
+      ];
+    } else {
+      // Go server arguments
+      return [
+        'start',
+        '--port', this.serverPort.toString(),
+        '--bind', `0.0.0.0:${this.serverPort}`,
+        '--cleanup'
+      ];
+    }
   }
 
   private async waitForServer(maxAttempts = 30, interval = 1000): Promise<void> {

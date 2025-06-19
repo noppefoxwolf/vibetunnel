@@ -45,7 +45,7 @@ export interface CreateSessionOptions {
 export interface ServerConfig {
   port: number;
   host: string;
-  mode: 'rust' | 'node';
+  mode: 'rust' | 'go';
   authToken?: string;
   recordingsPath?: string;
   logPath?: string;

@@ -56,7 +56,7 @@ interface Settings {
   accessMode?: 'localhost' | 'network' | 'ngrok';
   terminalApp?: string;
   cleanupOnStartup?: boolean;
-  serverMode?: 'rust' | 'node';
+  serverMode?: 'rust' | 'go';
   updateChannel?: 'stable' | 'beta';
   debugMode?: boolean;
   firstRun?: boolean;
