@@ -207,7 +207,7 @@ window.finishSetup = async function() {
     
     // Close welcome window after a short delay
     setTimeout(() => {
-      window.close();
+      electronAPI.closeWindow();
     }, 2000);
   }, 2000);
 };

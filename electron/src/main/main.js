@@ -379,13 +379,30 @@ function setupIPCHandlers() {
   });
   
   ipcMain.handle('set-setting', (event, key, value) => {
+    console.log(`Setting ${key} to ${value}`);
     store.set(key, value);
     
-    // Apply changes
-    if (key === 'launchAtLogin') {
-      setupAutoLaunch();
-    } else if (key === 'showDockIcon') {
-      updateDockVisibility();
+    // Apply changes immediately
+    switch (key) {
+      case 'launchAtLogin':
+        setupAutoLaunch();
+        console.log('Updated launch at login');
+        break;
+      case 'showDockIcon':
+        updateDockVisibility();
+        console.log('Updated dock visibility');
+        break;
+      case 'serverPort':
+        // If server is running, it needs to be restarted with new port
+        if (serverManager?.isRunning()) {
+          dialog.showMessageBox({
+            type: 'info',
+            title: 'Restart Required',
+            message: 'Please restart the server for the port change to take effect.',
+            buttons: ['OK']
+          });
+        }
+        break;
     }
     
     return true;

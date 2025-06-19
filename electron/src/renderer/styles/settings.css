@@ -137,7 +137,19 @@ h2 {
   font-size: 13px;
   transition: all 0.15s ease;
   background: #fff;
+  color: #333;
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+  -webkit-appearance: none;
+}
+
+.input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.input[type="number"]::-webkit-inner-spin-button,
+.input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .input:focus, .select:focus {
@@ -159,6 +171,38 @@ h2 {
   cursor: pointer;
   width: 16px;
   height: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.setting.checkbox input[type="checkbox"]:checked {
+  background: #007aff;
+  border-color: #007aff;
+}
+
+.setting.checkbox input[type="checkbox"]:checked::after {
+  content: '✓';
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.setting.checkbox input[type="checkbox"]:hover {
+  border-color: #007aff;
+}
+
+.setting.checkbox input[type="checkbox"]:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0,122,255,0.15);
 }
 
 .setting.checkbox .label {
@@ -252,24 +296,41 @@ h2 {
   margin: 5px 0;
 }
 
-/* Platform specific styles */
+/* Dark mode support */
 @media (prefers-color-scheme: dark) {
   body {
     background: #1e1e1e;
     color: #e0e0e0;
   }
   
+  .window {
+    background: #1e1e1e;
+  }
+  
   .sidebar {
-    background: #252525;
-    border-right-color: #3a3a3a;
+    background: #2a2a2a;
+    border-right-color: #404040;
+  }
+  
+  .content {
+    background: #1e1e1e;
+  }
+  
+  h2 {
+    color: #e0e0e0;
   }
   
   .tab:hover {
-    background: #2a2a2a;
+    background: #3a3a3a;
   }
   
   .tab.active {
-    background: #303030;
+    background: #404040;
+    color: #fff;
+  }
+  
+  .tab.active::before {
+    background: #0a84ff;
   }
   
   .tab .icon {
@@ -277,17 +338,30 @@ h2 {
   }
   
   .tab.active .icon {
-    fill: #e0e0e0;
+    fill: #0a84ff;
+  }
+  
+  .setting .label {
+    color: #e0e0e0;
+  }
+  
+  .setting .help {
+    color: #999;
+  }
+  
+  .setting-group {
+    border-bottom-color: #404040;
   }
   
   .input, .select {
     background: #2a2a2a;
     color: #e0e0e0;
-    border-color: #3a3a3a;
+    border-color: #404040;
   }
   
   .input:focus, .select:focus {
     border-color: #0a84ff;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.1), 0 0 0 3px rgba(10,132,255,0.3);
   }
   
   .button {
@@ -300,5 +374,28 @@ h2 {
   
   .info-group {
     background: #2a2a2a;
+    border: 1px solid #404040;
+  }
+  
+  .about-content {
+    color: #e0e0e0;
+  }
+  
+  .credits {
+    border-top-color: #404040;
+  }
+  
+  .setting.checkbox input[type="checkbox"] {
+    background: #2a2a2a;
+    border-color: #404040;
+  }
+  
+  .setting.checkbox input[type="checkbox"]:checked {
+    background: #0a84ff;
+    border-color: #0a84ff;
+  }
+  
+  .setting.checkbox input[type="checkbox"]:hover {
+    border-color: #0a84ff;
   }
 }

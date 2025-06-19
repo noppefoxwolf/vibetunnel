@@ -28,20 +28,57 @@ async function init() {
 // Apply settings to UI elements
 function applySettingsToUI() {
   // General settings
-  document.getElementById('serverPort').value = settings.serverPort || 4020;
-  document.getElementById('launchAtLogin').checked = settings.launchAtLogin || false;
-  document.getElementById('showDockIcon').checked = settings.showDockIcon || false;
-  document.getElementById('autoCleanupOnQuit').checked = settings.autoCleanupOnQuit || true;
+  const serverPortInput = document.getElementById('serverPort');
+  if (serverPortInput) {
+    serverPortInput.value = settings.serverPort !== undefined ? settings.serverPort : 4020;
+  }
+  
+  const launchAtLoginCheckbox = document.getElementById('launchAtLogin');
+  if (launchAtLoginCheckbox) {
+    launchAtLoginCheckbox.checked = settings.launchAtLogin === true;
+  }
+  
+  const showDockIconCheckbox = document.getElementById('showDockIcon');
+  if (showDockIconCheckbox) {
+    showDockIconCheckbox.checked = settings.showDockIcon === true;
+  }
+  
+  const autoCleanupCheckbox = document.getElementById('autoCleanupOnQuit');
+  if (autoCleanupCheckbox) {
+    autoCleanupCheckbox.checked = settings.autoCleanupOnQuit !== false; // Default true
+  }
   
   // Dashboard settings
-  document.getElementById('accessMode').value = settings.accessMode || 'localhost';
-  document.getElementById('networkPassword').value = settings.networkPassword || '';
-  document.getElementById('ngrokAuthToken').value = settings.ngrokAuthToken || '';
+  const accessModeSelect = document.getElementById('accessMode');
+  if (accessModeSelect) {
+    accessModeSelect.value = settings.accessMode || 'localhost';
+  }
+  
+  const networkPasswordInput = document.getElementById('networkPassword');
+  if (networkPasswordInput) {
+    networkPasswordInput.value = settings.networkPassword || '';
+  }
+  
+  const ngrokAuthTokenInput = document.getElementById('ngrokAuthToken');
+  if (ngrokAuthTokenInput) {
+    ngrokAuthTokenInput.value = settings.ngrokAuthToken || '';
+  }
   
   // Advanced settings
-  document.getElementById('serverMode').value = settings.serverMode || 'rust';
-  document.getElementById('updateChannel').value = settings.updateChannel || 'stable';
-  document.getElementById('debugMode').checked = settings.debugMode || false;
+  const serverModeSelect = document.getElementById('serverMode');
+  if (serverModeSelect) {
+    serverModeSelect.value = settings.serverMode || 'rust';
+  }
+  
+  const updateChannelSelect = document.getElementById('updateChannel');
+  if (updateChannelSelect) {
+    updateChannelSelect.value = settings.updateChannel || 'stable';
+  }
+  
+  const debugModeCheckbox = document.getElementById('debugMode');
+  if (debugModeCheckbox) {
+    debugModeCheckbox.checked = settings.debugMode === true;
+  }
   
   // Show/hide conditional fields
   updateConditionalFields();
@@ -77,11 +114,23 @@ function setupEventHandlers() {
   });
   
   document.getElementById('launchAtLogin').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('launchAtLogin', e.target.checked);
+    try {
+      await electronAPI.setSetting('launchAtLogin', e.target.checked);
+      console.log('Launch at login set to:', e.target.checked);
+    } catch (error) {
+      console.error('Failed to set launch at login:', error);
+      e.target.checked = !e.target.checked; // Revert on error
+    }
   });
   
   document.getElementById('showDockIcon').addEventListener('change', async (e) => {
-    await electronAPI.setSetting('showDockIcon', e.target.checked);
+    try {
+      await electronAPI.setSetting('showDockIcon', e.target.checked);
+      console.log('Show dock icon set to:', e.target.checked);
+    } catch (error) {
+      console.error('Failed to set show dock icon:', error);
+      e.target.checked = !e.target.checked; // Revert on error
+    }
   });
   
   document.getElementById('autoCleanupOnQuit').addEventListener('change', async (e) => {
