@@ -56,11 +56,26 @@ class ServerManager {
         }
       }
 
+      // Ensure control directory exists
+      const controlDir = path.join(app.getPath('userData'), '.vibetunnel', 'control');
+      fs.mkdirSync(controlDir, { recursive: true });
+      
       // Add server arguments
       const args = [
-        'server',
-        '--port', this.serverPort.toString()
+        '--control-path', controlDir,
+        '--serve', this.serverPort.toString()
       ];
+      
+      // Add static path for web UI if available
+      const webPath = path.join(__dirname, '../../../web/public');
+      if (fs.existsSync(webPath)) {
+        args.push('--static-path', webPath);
+      }
+      
+      // Add password if network access is enabled
+      if (accessMode === 'network' && env.ACCESS_PASSWORD) {
+        args.push('--password', env.ACCESS_PASSWORD);
+      }
       
       console.log('Starting server with args:', args);
       this.serverProcess = spawn(serverPath, args, { env });
@@ -76,7 +91,9 @@ class ServerManager {
           output.includes('Server listening') ||
           output.includes('Listening on') ||
           output.includes('Started on') ||
-          output.includes(`http://localhost:${this.serverPort}`) ||
+          output.includes('Starting server') ||
+          output.includes('HTTP server') ||
+          output.includes(`${this.serverPort}`) ||
           output.includes('server started')
         )) {
           serverStarted = true;
