@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, Tray, dialog, shell, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
-const Store = require('electron-store');
+const Store = require('electron-store').default || require('electron-store');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -49,9 +49,30 @@ function initializeSettings() {
 
 // Create system tray
 function createTray() {
-  const iconPath = path.join(__dirname, '../../assets', isMac ? 'tray-icon.png' : 'tray-icon.png');
+  let iconPath;
   
-  tray = new Tray(iconPath);
+  if (isMac) {
+    // Use template image for macOS to support dark/light mode
+    iconPath = path.join(__dirname, '../../assets', 'tray-iconTemplate.png');
+  } else {
+    iconPath = path.join(__dirname, '../../assets', 'tray-icon.png');
+  }
+  
+  // Create tray with native image
+  const nativeImage = require('electron').nativeImage;
+  const icon = nativeImage.createFromPath(iconPath);
+  
+  if (isMac) {
+    // Resize icon to 16x16 for macOS menu bar
+    const resizedIcon = icon.resize({ width: 16, height: 16 });
+    resizedIcon.setTemplateImage(true);
+    tray = new Tray(resizedIcon);
+  } else {
+    tray = new Tray(icon);
+  }
+  
+  // Set tooltip
+  tray.setToolTip('VibeTunnel');
   
   updateTrayMenu();
   
@@ -79,53 +100,68 @@ function updateTrayMenu() {
   const serverStatus = serverManager?.isRunning() ? 'Running' : 'Stopped';
   const serverPort = store.get('serverPort', 4020);
   
-  const contextMenu = Menu.buildFromTemplate([
+  const menuItems = [
     {
       label: `VibeTunnel - ${serverStatus}`,
       enabled: false
     },
-    { type: 'separator' },
-    {
+    { type: 'separator' }
+  ];
+  
+  // Only show Dashboard option when server is running
+  if (serverManager?.isRunning()) {
+    menuItems.push({
       label: 'Open Dashboard',
       click: () => {
         shell.openExternal(`http://localhost:${serverPort}`);
       }
-    },
-    {
+    });
+    
+    menuItems.push({
       label: 'Active Sessions',
       submenu: getActiveSessionsMenu()
-    },
-    { type: 'separator' },
-    {
-      label: 'Preferences...',
-      click: () => {
-        createSettingsWindow();
-      }
-    },
-    { type: 'separator' },
-    {
-      label: 'Start Server',
-      click: () => {
-        startServer();
-      },
-      visible: !serverManager?.isRunning()
-    },
-    {
-      label: 'Stop Server',
-      click: () => {
-        stopServer();
-      },
-      visible: serverManager?.isRunning()
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit VibeTunnel',
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
+    });
+    
+    menuItems.push({ type: 'separator' });
+  }
   
+  menuItems.push({
+    label: 'Preferences...',
+    click: () => {
+      createSettingsWindow();
+    }
+  });
+  
+  menuItems.push({ type: 'separator' });
+  
+  if (!serverManager?.isRunning()) {
+    menuItems.push({
+      label: 'Start Server',
+      click: async () => {
+        await startServer();
+        updateTrayMenu();
+      }
+    });
+  } else {
+    menuItems.push({
+      label: 'Stop Server',
+      click: async () => {
+        await stopServer();
+        updateTrayMenu();
+      }
+    });
+  }
+  
+  menuItems.push({ type: 'separator' });
+  
+  menuItems.push({
+    label: 'Quit VibeTunnel',
+    click: () => {
+      app.quit();
+    }
+  });
+  
+  const contextMenu = Menu.buildFromTemplate(menuItems);
   tray.setContextMenu(contextMenu);
   tray.setToolTip(`VibeTunnel - ${serverStatus}`);
 }
@@ -282,10 +318,27 @@ async function startServer() {
   }
   
   try {
+    console.log('Starting server...');
     await serverManager.start();
+    console.log('Server started successfully');
     updateTrayMenu();
+    
+    // Notify all windows that server started
+    if (mainWindow) {
+      mainWindow.webContents.send('server-status-changed', {
+        running: true,
+        port: store.get('serverPort', 4020)
+      });
+    }
+    if (settingsWindow) {
+      settingsWindow.webContents.send('server-status-changed', {
+        running: true,
+        port: store.get('serverPort', 4020)
+      });
+    }
   } catch (error) {
-    dialog.showErrorBox('Server Error', `Failed to start server: ${error.message}`);
+    console.error('Failed to start server:', error);
+    dialog.showErrorBox('Server Error', `Failed to start server: ${error.message}\n\nPlease check that the server binary exists in the bin directory.`);
   }
 }
 
@@ -294,9 +347,26 @@ async function stopServer() {
   if (!serverManager) return;
   
   try {
+    console.log('Stopping server...');
     await serverManager.stop();
+    console.log('Server stopped');
     updateTrayMenu();
+    
+    // Notify all windows that server stopped
+    if (mainWindow) {
+      mainWindow.webContents.send('server-status-changed', {
+        running: false,
+        port: store.get('serverPort', 4020)
+      });
+    }
+    if (settingsWindow) {
+      settingsWindow.webContents.send('server-status-changed', {
+        running: false,
+        port: store.get('serverPort', 4020)
+      });
+    }
   } catch (error) {
+    console.error('Failed to stop server:', error);
     dialog.showErrorBox('Server Error', `Failed to stop server: ${error.message}`);
   }
 }

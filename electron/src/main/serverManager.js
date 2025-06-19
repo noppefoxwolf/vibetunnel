@@ -22,9 +22,21 @@ class ServerManager {
     }
 
     const serverPath = this.getServerExecutablePath();
+    console.log('Looking for server at:', serverPath);
     
     if (!fs.existsSync(serverPath)) {
+      // Try to find any tty-fwd binary
+      const binDir = path.dirname(serverPath);
+      console.error('Server not found at expected path:', serverPath);
+      console.error('Bin directory contents:', fs.existsSync(binDir) ? fs.readdirSync(binDir) : 'Directory not found');
       throw new Error(`Server executable not found at: ${serverPath}`);
+    }
+    
+    // Check if executable
+    try {
+      fs.accessSync(serverPath, fs.constants.X_OK);
+    } catch (err) {
+      throw new Error(`Server binary is not executable: ${serverPath}`);
     }
 
     return new Promise((resolve, reject) => {
@@ -44,13 +56,30 @@ class ServerManager {
         }
       }
 
-      this.serverProcess = spawn(serverPath, [], { env });
+      // Add server arguments
+      const args = [
+        'server',
+        '--port', this.serverPort.toString()
+      ];
+      
+      console.log('Starting server with args:', args);
+      this.serverProcess = spawn(serverPath, args, { env });
 
+      let serverStarted = false;
+      
       this.serverProcess.stdout.on('data', (data) => {
-        console.log(`Server: ${data}`);
+        const output = data.toString();
+        console.log(`Server: ${output}`);
         
-        // Check if server started successfully
-        if (data.toString().includes('Server listening on')) {
+        // Check various success messages from tty-fwd
+        if (!serverStarted && (
+          output.includes('Server listening') ||
+          output.includes('Listening on') ||
+          output.includes('Started on') ||
+          output.includes(`http://localhost:${this.serverPort}`) ||
+          output.includes('server started')
+        )) {
+          serverStarted = true;
           this.isServerRunning = true;
           this.startSessionMonitoring();
           resolve();
@@ -75,12 +104,29 @@ class ServerManager {
       });
 
       // Timeout if server doesn't start within 10 seconds
-      setTimeout(() => {
+      const timeout = setTimeout(() => {
         if (!this.isServerRunning) {
           this.stop();
           reject(new Error('Server failed to start within timeout period'));
         }
       }, 10000);
+      
+      // Also try to check if server is responsive after a short delay
+      setTimeout(async () => {
+        if (!serverStarted) {
+          try {
+            // Try to ping the server
+            await axios.get(`http://localhost:${this.serverPort}/health`, { timeout: 2000 });
+            serverStarted = true;
+            this.isServerRunning = true;
+            clearTimeout(timeout);
+            this.startSessionMonitoring();
+            resolve();
+          } catch (e) {
+            // Server not ready yet, will wait for stdout message
+          }
+        }
+      }, 2000);
     });
   }
 

@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;">
   <title>Welcome to VibeTunnel</title>
   <link rel="stylesheet" href="styles/welcome.css">
 </head>
@@ -40,7 +41,7 @@
           </div>
         </div>
         
-        <button class="button primary" onclick="nextPage()">Get Started</button>
+        <button class="button primary" id="getStartedBtn">Get Started</button>
       </div>
       
       <!-- Page 2: System Requirements -->
@@ -56,8 +57,8 @@
         </div>
         
         <div class="nav-buttons">
-          <button class="button secondary" onclick="previousPage()">Back</button>
-          <button class="button primary" onclick="nextPage()">Continue</button>
+          <button class="button secondary" id="backBtn1">Back</button>
+          <button class="button primary" id="continueBtn1">Continue</button>
         </div>
       </div>
       
@@ -92,8 +93,8 @@
         </div>
         
         <div class="nav-buttons">
-          <button class="button secondary" onclick="previousPage()">Back</button>
-          <button class="button primary" onclick="nextPage()">Continue</button>
+          <button class="button secondary" id="backBtn2">Back</button>
+          <button class="button primary" id="continueBtn2">Continue</button>
         </div>
       </div>
       
@@ -137,8 +138,8 @@
         </div>
         
         <div class="nav-buttons">
-          <button class="button secondary" onclick="previousPage()">Back</button>
-          <button class="button primary" onclick="finishSetup()">Finish Setup</button>
+          <button class="button secondary" id="backBtn3">Back</button>
+          <button class="button primary" id="finishBtn">Finish Setup</button>
         </div>
       </div>
     </div>

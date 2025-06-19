@@ -80,6 +80,35 @@ function showPlatformInstructions(platform) {
 
 // Setup event listeners
 function setupEventListeners() {
+  // Navigation buttons
+  document.getElementById('getStartedBtn').addEventListener('click', () => {
+    window.nextPage();
+  });
+  
+  document.getElementById('backBtn1').addEventListener('click', () => {
+    window.previousPage();
+  });
+  
+  document.getElementById('continueBtn1').addEventListener('click', () => {
+    window.nextPage();
+  });
+  
+  document.getElementById('backBtn2').addEventListener('click', () => {
+    window.previousPage();
+  });
+  
+  document.getElementById('continueBtn2').addEventListener('click', () => {
+    window.nextPage();
+  });
+  
+  document.getElementById('backBtn3').addEventListener('click', () => {
+    window.previousPage();
+  });
+  
+  document.getElementById('finishBtn').addEventListener('click', () => {
+    window.finishSetup();
+  });
+  
   // Access mode radio buttons
   const accessModes = document.querySelectorAll('input[name="accessMode"]');
   accessModes.forEach(radio => {
@@ -91,9 +120,11 @@ function setupEventListeners() {
   
   // Launch at login checkbox
   const launchAtLogin = document.getElementById('launchAtLogin');
-  launchAtLogin.addEventListener('change', (e) => {
-    window.launchAtLogin = e.target.checked;
-  });
+  if (launchAtLogin) {
+    launchAtLogin.addEventListener('change', (e) => {
+      window.launchAtLogin = e.target.checked;
+    });
+  }
 }
 
 // Navigation functions
