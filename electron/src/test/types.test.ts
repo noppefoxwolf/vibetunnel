@@ -112,7 +112,7 @@ describe('TypeScript Types', () => {
     expect(['localhost', 'network', 'ngrok', 'tailscale']).toContain(accessMode);
     
     const serverMode: StoreSchema['serverMode'] = 'rust';
-    expect(['rust', 'node']).toContain(serverMode);
+    expect(serverMode).toBe('rust');
     
     const updateChannel: StoreSchema['updateChannel'] = 'stable';
     expect(['stable', 'beta', 'alpha']).toContain(updateChannel);
