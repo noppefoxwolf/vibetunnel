@@ -19,6 +19,8 @@
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
+    "build:all": "./scripts/build-all.sh",
+    "build:binaries": "npm run build:server && ./scripts/build-cross-platform.sh",
     "postinstall": "electron-builder install-app-deps",
     "lint": "eslint src --ext .js,.jsx,.ts,.tsx"
   },
