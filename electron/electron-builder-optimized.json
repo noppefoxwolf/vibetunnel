@@ -1,0 +1,134 @@
+{
+  "appId": "com.vibetunnel.app",
+  "productName": "VibeTunnel",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/main/**/*",
+    "dist/renderer/**/*", 
+    "dist/preload/**/*",
+    "assets/**/*",
+    "package.json",
+    "node_modules/@xterm/addon-fit/**/*",
+    "node_modules/@xterm/addon-search/**/*",
+    "node_modules/@xterm/addon-web-links/**/*",
+    "node_modules/@xterm/xterm/**/*",
+    "node_modules/axios/**/*",
+    "node_modules/electron-store/**/*",
+    "node_modules/electron-updater/**/*",
+    "node_modules/node-pty/**/*",
+    "node_modules/conf/**/*",
+    "node_modules/builder-util-runtime/**/*",
+    "node_modules/ajv/**/*",
+    "node_modules/ajv-formats/**/*",
+    "node_modules/atomically/**/*",
+    "node_modules/debounce-fn/**/*",
+    "node_modules/debug/**/*",
+    "node_modules/dot-prop/**/*",
+    "node_modules/env-paths/**/*",
+    "node_modules/follow-redirects/**/*",
+    "node_modules/form-data/**/*",
+    "node_modules/fs-extra/**/*",
+    "node_modules/graceful-fs/**/*",
+    "node_modules/json-schema-traverse/**/*",
+    "node_modules/jsonfile/**/*",
+    "node_modules/lazy-val/**/*",
+    "node_modules/lodash.isequal/**/*",
+    "node_modules/mimic-fn/**/*",
+    "node_modules/ms/**/*",
+    "node_modules/nan/**/*",
+    "node_modules/onetime/**/*",
+    "node_modules/p-debounce/**/*",
+    "node_modules/pkg-up/**/*",
+    "node_modules/proxy-from-env/**/*",
+    "node_modules/sax/**/*",
+    "node_modules/semver/**/*",
+    "node_modules/type-fest/**/*",
+    "node_modules/universalify/**/*",
+    "node_modules/asynckit/**/*",
+    "node_modules/combined-stream/**/*",
+    "node_modules/delayed-stream/**/*",
+    "node_modules/mime-db/**/*",
+    "node_modules/mime-types/**/*",
+    "node_modules/fast-deep-equal/**/*",
+    "node_modules/fast-uri/**/*",
+    "node_modules/require-from-string/**/*",
+    "node_modules/uri-js/**/*",
+    "node_modules/punycode/**/*",
+    "!dist/VibeTunnel*",
+    "!dist/mac*",
+    "!dist/win*",
+    "!dist/linux*",
+    "!dist/*.dmg",
+    "!dist/*.zip",
+    "!dist/*.blockmap",
+    "!**/*.map",
+    "!**/*.ts",
+    "!**/tsconfig.json",
+    "!**/*.d.ts",
+    "!**/test/**",
+    "!**/tests/**",
+    "!**/__tests__/**",
+    "!**/docs/**",
+    "!**/example/**",
+    "!**/examples/**",
+    "!**/*.md",
+    "!**/LICENSE*",
+    "!**/license*",
+    "!**/.npmignore",
+    "!**/.gitignore",
+    "!**/.eslintrc*",
+    "!**/.prettierrc*",
+    "!**/.editorconfig",
+    "!**/.travis.yml",
+    "!**/.github/**",
+    "!**/Makefile",
+    "!**/makefile"
+  ],
+  "asarUnpack": [
+    "node_modules/node-pty/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "bin",
+      "to": "bin",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "../web/public",
+      "to": "web",
+      "filter": ["**/*"]
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "icon": "assets/icon.icns",
+    "identity": null,
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["arm64"]
+      }
+    ]
+  },
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  }
+}

@@ -295,14 +295,6 @@ function setupSettingsHandlers(): void {
 
 // Button handlers
 function setupButtonHandlers(): void {
-  // Debug button
-  const debugBtn = getElementById('debugBtn');
-  if (debugBtn) {
-    debugBtn.addEventListener('click', () => {
-      window.electronAPI.openDevTools();
-      debugBtn.classList.toggle('active');
-    });
-  }
   
   // Helper buttons
   const installCliBtn = getElementById('installCliBtn');

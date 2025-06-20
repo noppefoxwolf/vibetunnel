@@ -32,12 +32,12 @@ fi
 
 # Build Electron app for macOS arm64
 echo "🍎 Building macOS app (arm64)..."
-npx electron-builder --mac --arm64 --publish=never --config .electron-builder.config.js
+npx electron-builder --mac --arm64 --publish=never --config electron-builder-optimized.json
 
 # Check if build was successful
 if [ $? -eq 0 ]; then
     echo "✅ Build completed successfully!"
-    echo "📍 Output location: dist/"
+    echo "📍 Output location: release/"
 else
     echo "❌ Build failed"
     exit 1

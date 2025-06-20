@@ -1,0 +1,115 @@
+{
+  "appId": "com.vibetunnel.app",
+  "productName": "VibeTunnel",
+  "directories": {
+    "output": "dist",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "assets/**/*",
+    "package.json",
+    "node_modules/**/*",
+    "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+    "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+    "!**/node_modules/**/{test,__tests__,tests,powered-test,example,examples}/**",
+    "!**/node_modules/**/build/**",
+    "!**/node_modules/**/dist/**",
+    "!**/node_modules/**/*.{o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+    "!**/node_modules/**/.{DS_Store,git,hg,svn,lock-wscript,wafpickle-N}",
+    "!**/node_modules/**/.{editorconfig,flowconfig,jshintrc,tslintrc,prettierrc}",
+    "!**/node_modules/**/.{gitignore,gitattributes,npmignore,babelrc,nyc_output}",
+    "!**/node_modules/**/{karma.conf.js,webpack.config.js,rollup.config.js}",
+    "!**/node_modules/**/{Jenkinsfile,Makefile,Gulpfile.js,Gruntfile.js}",
+    "!**/node_modules/**/*.{sh,gyp,gypi,coffee,yaml,yml,lock}",
+    "!**/node_modules/**/*.{cc,c,h,hh,cpp,hpp,mm,m,mk,a,o,obj,dll,dylib,so,pdb}",
+    "!**/node_modules/**/*.{sln,suo,vcxproj,vcxproj.filters}",
+    "!**/node_modules/**/*.{md,mkd,markdown,MD}",
+    "!**/node_modules/**/*.{ts,tsx,flow,map}",
+    "!**/node_modules/electron/**",
+    "!**/node_modules/@electron/**",
+    "!**/node_modules/electron-builder/**",
+    "!**/node_modules/app-builder-lib/**",
+    "!**/node_modules/dmg-builder/**",
+    "!**/node_modules/7zip-bin/**",
+    "!**/node_modules/@types/**",
+    "!**/node_modules/typescript/**",
+    "!**/node_modules/eslint/**",
+    "!**/node_modules/@typescript-eslint/**",
+    "!**/node_modules/prettier/**",
+    "!**/node_modules/vitest/**",
+    "!**/node_modules/@vitest/**",
+    "!**/node_modules/vite/**",
+    "!**/node_modules/jsdom/**",
+    "!**/node_modules/date-fns/**",
+    "!**/node_modules/rxjs/**",
+    "!**/node_modules/@babel/**",
+    "!**/node_modules/lodash/**",
+    "!**/node_modules/@esbuild/**",
+    "!**/node_modules/rollup/**",
+    "!**/node_modules/postcss/**",
+    "!**/node_modules/concurrently/**",
+    "!**/node_modules/nodemon/**",
+    "!**/node_modules/**/LICENSE*",
+    "!**/node_modules/**/license*",
+    "!**/node_modules/**/*.d.ts",
+    "!**/node_modules/**/tsconfig.json",
+    "!**/node_modules/**/tslint.json",
+    "!**/node_modules/**/eslintrc.json",
+    "!**/node_modules/**/*.eslintrc*",
+    "!**/node_modules/**/{docs,doc,website,images,assets}/**",
+    "!**/node_modules/**/{man,benchmark}/**",
+    "!**/node_modules/**/coverage/**",
+    "!**/node_modules/**/.github/**",
+    "!**/node_modules/**/appveyor.yml",
+    "!**/node_modules/**/circle.yml",
+    "!**/node_modules/**/.travis.yml",
+    "!**/node_modules/**/*.{spec,test}.{js,ts}",
+    "!**/*.map",
+    "!**/{test,tests}/**"
+  ],
+  "asarUnpack": [
+    "node_modules/node-pty/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "bin",
+      "to": "bin",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "../web/public",
+      "to": "web",
+      "filter": ["**/*"]
+    }
+  ],
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "icon": "assets/icon.icns",
+    "identity": null,
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64"]
+      },
+      {
+        "target": "zip", 
+        "arch": ["arm64"]
+      }
+    ]
+  },
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ]
+  }
+}
