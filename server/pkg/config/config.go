@@ -94,13 +94,6 @@ func (c *Config) LoadFromEnv() {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
-	// Validate static path
-	if c.StaticPath == "" {
-		return fmt.Errorf("static path is required")
-	}
-	if _, err := os.Stat(c.StaticPath); err != nil {
-		return fmt.Errorf("static path does not exist: %s", c.StaticPath)
-	}
 	// Validate HQ mode settings
 	if c.HQUrl != "" {
 		if c.IsHQMode {

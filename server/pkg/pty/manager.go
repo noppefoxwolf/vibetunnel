@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,19 +20,23 @@ import (
 
 // SessionInfo holds information about a PTY session
 type SessionInfo struct {
-	ID         string    `json:"id"`
-	Command    string    `json:"command"`
-	WorkingDir string    `json:"workingDir"`
-	Name       string    `json:"name"`
-	Status     string    `json:"status"` // starting, running, exited
-	ExitCode   int       `json:"exitCode,omitempty"`
-	StartedAt  time.Time `json:"startedAt"`
-	PID        int       `json:"pid,omitempty"`
-	Cols       int       `json:"cols"`
-	Rows       int       `json:"rows"`
-	Term       string    `json:"term"`
-	IsSpawned  bool      `json:"isSpawned"`      // true if spawned by pty manager
-	ControlPath string   `json:"controlPath,omitempty"` // path to control pipe for external sessions
+	ID          string    `json:"id"`
+	Command     string    `json:"command"`     // Stored as cmdline in JSON
+	CommandLine []string  `json:"cmdline"`     // TypeScript compatibility
+	WorkingDir  string    `json:"workingDir"`  // Stored as cwd in JSON
+	CWD         string    `json:"cwd"`         // TypeScript compatibility
+	Name        string    `json:"name"`
+	Status      string    `json:"status"` // starting, running, exited
+	ExitCode    int       `json:"exitCode,omitempty"`
+	StartedAt   time.Time `json:"startedAt"`    // Stored as started_at in JSON
+	StartedAtTS string    `json:"started_at"`   // TypeScript compatibility
+	PID         int       `json:"pid,omitempty"`
+	Cols        int       `json:"cols"`
+	Rows        int       `json:"rows"`
+	Term        string    `json:"term"`
+	SpawnType   string    `json:"spawn_type,omitempty"` // "pty" or "external"
+	IsSpawned   bool      `json:"-"`                    // Computed from SpawnType
+	ControlPath string    `json:"controlPath,omitempty"` // path to control pipe for external sessions
 }
 
 // Manager manages PTY sessions
@@ -90,19 +95,27 @@ func (m *Manager) CreateSession(command []string, opts CreateSessionOptions) (*S
 	if opts.WorkingDir == "" {
 		opts.WorkingDir, _ = os.Getwd()
 	}
+	if opts.Name == "" {
+		// Use basename of command if no name provided (TypeScript compatibility)
+		opts.Name = filepath.Base(command[0])
+	}
 
 	// Create session info
 	info := &SessionInfo{
-		ID:         sessionID,
-		Command:    shellQuoteCommand(command),
-		WorkingDir: opts.WorkingDir,
-		Name:       opts.Name,
-		Status:     "starting",
-		StartedAt:  time.Now(),
-		Cols:       opts.Cols,
-		Rows:       opts.Rows,
-		Term:       opts.Term,
-		IsSpawned:  true,
+		ID:          sessionID,
+		Command:     shellQuoteCommand(command),
+		CommandLine: command, // Keep the original array
+		WorkingDir:  opts.WorkingDir,
+		CWD:         opts.WorkingDir, // TypeScript compatibility
+		Name:        opts.Name,
+		Status:      "starting",
+		StartedAt:   time.Now(),
+		StartedAtTS: time.Now().Format(time.RFC3339), // TypeScript compatibility
+		Cols:        opts.Cols,
+		Rows:        opts.Rows,
+		Term:        opts.Term,
+		SpawnType:   "pty",
+		IsSpawned:   true,
 	}
 
 	// Create the command
@@ -461,7 +474,30 @@ func (m *Manager) saveSessionInfo(info *SessionInfo) error {
 	infoPath := filepath.Join(sessionDir, "session.json")
 	tempPath := infoPath + ".tmp"
 
-	data, err := json.MarshalIndent(info, "", "  ")
+	// Convert to TypeScript format for saving
+	// Create a map that matches TypeScript's session.json format
+	tsFormat := map[string]interface{}{
+		"cmdline":     info.CommandLine, // Use the original array
+		"name":        info.Name,
+		"cwd":         info.WorkingDir,
+		"status":      info.Status,
+		"started_at":  info.StartedAt.Format(time.RFC3339),
+		"term":        info.Term,
+		"spawn_type":  "pty",
+		"pid":         info.PID,
+	}
+
+	// Only add exit_code if session has exited
+	if info.Status == "exited" {
+		tsFormat["exit_code"] = info.ExitCode
+	}
+
+	// Add control path if it exists
+	if info.ControlPath != "" {
+		tsFormat["control_path"] = info.ControlPath
+	}
+
+	data, err := json.MarshalIndent(tsFormat, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -486,6 +522,26 @@ func (m *Manager) loadSessionInfo(sessionID string) (*SessionInfo, error) {
 	if err := json.Unmarshal(data, &info); err != nil {
 		return nil, err
 	}
+
+	// Set the ID from the directory name (TypeScript doesn't store it in JSON)
+	info.ID = sessionID
+
+	// Copy TypeScript fields to Go fields
+	if len(info.CommandLine) > 0 {
+		info.Command = shellQuoteCommand(info.CommandLine)
+	}
+	if info.CWD != "" {
+		info.WorkingDir = info.CWD
+	}
+	if info.StartedAtTS != "" {
+		// Parse TypeScript ISO timestamp
+		if t, err := time.Parse(time.RFC3339, info.StartedAtTS); err == nil {
+			info.StartedAt = t
+		}
+	}
+	
+	// Set IsSpawned based on SpawnType
+	info.IsSpawned = (info.SpawnType == "pty")
 
 	return &info, nil
 }
@@ -555,8 +611,9 @@ func shellQuoteCommand(command []string) string {
 	if len(command) == 0 {
 		return ""
 	}
-	// Simple implementation - in production would need proper shell escaping
-	return command[0]
+	// Join command array into a single string
+	// In the future, might want to add proper shell escaping
+	return strings.Join(command, " ")
 }
 
 // CreateSessionOptions holds options for creating a session

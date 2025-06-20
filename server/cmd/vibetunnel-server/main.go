@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -45,8 +44,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.Flags().IntVar(&cfg.Port, "port", cfg.Port, "Server port")
-	rootCmd.Flags().StringVar(&cfg.StaticPath, "static", "", "Path to static files (required)")
-	rootCmd.MarkFlagRequired("static")
+	rootCmd.Flags().StringVar(&cfg.StaticPath, "static", "./public", "Path to static files")
 	rootCmd.Flags().StringVar(&cfg.BasicAuthUsername, "username", "", "Basic auth username")
 	rootCmd.Flags().StringVar(&cfg.BasicAuthPassword, "password", "", "Basic auth password")
 	rootCmd.Flags().BoolVar(&cfg.IsHQMode, "hq", false, "Run as HQ server")
@@ -102,21 +100,21 @@ func runServer(cmd *cobra.Command, args []string) error {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.Use(gin.Recovery())
-	router.Use(gin.Logger())
-
-	// Apply authentication middleware
-	authMiddleware := auth.NewMiddleware(cfg)
-	apiGroup := router.Group("/api")
-	apiGroup.Use(authMiddleware)
 
 	// Health check endpoint (no auth)
 	router.GET("/api/health", func(c *gin.Context) {
+		log.Printf("[Health] Request from %s", c.ClientIP())
 		c.JSON(200, gin.H{
 			"status":    "ok",
 			"timestamp": time.Now().Format(time.RFC3339),
 			"mode":      cfg.GetServerMode(),
 		})
 	})
+
+	// Apply authentication middleware
+	authMiddleware := auth.NewMiddleware(cfg)
+	apiGroup := router.Group("/api")
+	apiGroup.Use(authMiddleware)
 
 	// Register API routes
 	apiHandler := api.NewHandler(cfg, sessionManager, terminalManager, streamWatcher, bufferAggregator, remoteRegistry)
@@ -126,24 +124,45 @@ func runServer(cmd *cobra.Command, args []string) error {
 	wsServer := stream.NewWebSocketServer(cfg, bufferAggregator)
 	router.GET("/buffers", wsServer.HandleWebSocket)
 
-	// Static files - serve index.html for all non-API routes
-	router.NoRoute(func(c *gin.Context) {
-		// If it's an API route, return 404
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+	// Serve static files from configured directory
+	if cfg.StaticPath != "" {
+		if _, err := os.Stat(cfg.StaticPath); err == nil {
+			// Serve static files for all non-API routes
+			router.NoRoute(func(c *gin.Context) {
+				// Don't serve API routes as static files
+				if len(c.Request.URL.Path) >= 4 && c.Request.URL.Path[:4] == "/api" {
+					c.JSON(404, gin.H{"error": "Not found"})
+					return
+				}
+				// Try to serve the file
+				filePath := filepath.Join(cfg.StaticPath, c.Request.URL.Path)
+				if c.Request.URL.Path == "/" {
+					filePath = filepath.Join(cfg.StaticPath, "index.html")
+				}
+				
+				// Check if file exists
+				if _, err := os.Stat(filePath); os.IsNotExist(err) {
+					// Try index.html for SPA routes
+					indexPath := filepath.Join(cfg.StaticPath, "index.html")
+					if _, err := os.Stat(indexPath); err == nil {
+						c.File(indexPath)
+						return
+					}
+					c.JSON(404, gin.H{"error": "Not found"})
+					return
+				}
+				
+				c.File(filePath)
+			})
+		} else {
+			return fmt.Errorf("static path does not exist: %s", cfg.StaticPath)
+		}
+	} else {
+		// If no static path configured, just return 404 for non-API routes
+		router.NoRoute(func(c *gin.Context) {
 			c.JSON(404, gin.H{"error": "Not found"})
-			return
-		}
-		
-		// Try to serve the exact file first
-		filePath := filepath.Join(cfg.StaticPath, c.Request.URL.Path)
-		if _, err := os.Stat(filePath); err == nil {
-			c.File(filePath)
-			return
-		}
-		
-		// Otherwise serve index.html for client-side routing
-		c.File(filepath.Join(cfg.StaticPath, "index.html"))
-	})
+		})
+	}
 
 	// Create HTTP server
 	srv := &http.Server{

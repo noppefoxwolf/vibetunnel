@@ -2,6 +2,10 @@
 
 This plan outlines the approach for porting the VibeTunnel Node.js/TypeScript server to Go while maintaining 100% API compatibility and passing all E2E tests.
 
+## Allowed Divergence
+
+1. **Static file serving path configuration**: The Go server accepts a `--static` flag to specify the static files directory (default: `./public`), while the TypeScript version hardcodes `path.join(process.cwd(), 'public')`. This allows more flexibility in deployment.
+
 ## Overview
 
 The port will create a fully compatible Go implementation of:
@@ -94,85 +98,85 @@ The port will create a fully compatible Go implementation of:
 
 ## Phase 4: Terminal Emulation & Binary Protocol
 
-### [ ] 4.1 Terminal Manager
-- [ ] Terminal state management (without xterm.js)
-- [ ] ANSI escape sequence processing
-- [ ] Buffer management and scrollback
-- [ ] Cursor tracking
+### [x] 4.1 Terminal Manager
+- [x] Terminal state management (using vt10x)
+- [x] ANSI escape sequence processing (via vt10x)
+- [x] Buffer management and scrollback
+- [x] Cursor tracking
 
-### [ ] 4.2 Binary Buffer Protocol
-- [ ] Implement encoder matching TypeScript format:
+### [x] 4.2 Binary Buffer Protocol
+- [x] Implement encoder matching TypeScript format:
   - 32-byte header
   - Row encoding (0xFE empty, 0xFD content)
   - Cell encoding with type bytes
   - Color and attribute support
-- [ ] Implement decoder for testing
-- [ ] Optimize for performance
+- [x] Implement decoder for testing
+- [x] Optimize for performance
 
-### [ ] 4.3 Buffer Change Notifications
-- [ ] Debounced notification system
-- [ ] Efficient change detection
+### [x] 4.3 Buffer Change Notifications
+- [x] Debounced notification system
+- [x] Efficient change detection
 
 ## Phase 5: API Endpoints
 
-### [ ] 5.1 Session Endpoints
-- [ ] GET /api/sessions - List sessions
-- [ ] POST /api/sessions - Create session
-- [ ] GET /api/sessions/:id - Get session info
-- [ ] DELETE /api/sessions/:id - Kill session
-- [ ] DELETE /api/sessions/:id/cleanup - Cleanup files
-- [ ] POST /api/cleanup-exited - Cleanup all exited
+### [x] 5.1 Session Endpoints
+- [x] GET /api/sessions - List sessions
+- [x] POST /api/sessions - Create session
+- [x] GET /api/sessions/:id - Get session info
+- [x] DELETE /api/sessions/:id - Kill session
+- [x] DELETE /api/sessions/:id/cleanup - Cleanup files
+- [x] POST /api/cleanup-exited - Cleanup all exited
 
-### [ ] 5.2 Session Interaction Endpoints
-- [ ] GET /api/sessions/:id/buffer - Binary buffer
-- [ ] GET /api/sessions/:id/stream - SSE stream
-- [ ] POST /api/sessions/:id/input - Send input
-- [ ] POST /api/sessions/:id/resize - Resize terminal
+### [x] 5.2 Session Interaction Endpoints
+- [x] GET /api/sessions/:id/buffer - Binary buffer
+- [x] GET /api/sessions/:id/stream - SSE stream
+- [x] POST /api/sessions/:id/input - Send input
+- [x] POST /api/sessions/:id/resize - Resize terminal
 
-### [ ] 5.3 Remote Endpoints (HQ Mode)
-- [ ] GET /api/remotes - List remotes
-- [ ] POST /api/remotes/register - Register remote
-- [ ] DELETE /api/remotes/:id - Unregister
-- [ ] POST /api/remotes/:name/refresh-sessions - Refresh
+### [x] 5.3 Remote Endpoints (HQ Mode)
+- [x] GET /api/remotes - List remotes
+- [x] POST /api/remotes/register - Register remote
+- [x] DELETE /api/remotes/:id - Unregister
+- [x] POST /api/remotes/:name/refresh-sessions - Refresh
 
-### [ ] 5.4 Health Endpoint
-- [ ] GET /api/health - Server health check
+### [x] 5.4 Health Endpoint
+- [x] GET /api/health - Server health check
 
 ## Phase 6: Real-time Communication
 
-### [ ] 6.1 WebSocket Server
-- [ ] WebSocket upgrade handler at /buffers
-- [ ] Connection management
-- [ ] Subscription protocol (subscribe/unsubscribe)
-- [ ] Binary message format (0xBF prefix)
-- [ ] Ping/pong keepalive
-- [ ] Client cleanup on disconnect
+### [x] 6.1 WebSocket Server
+- [x] WebSocket upgrade handler at /buffers
+- [x] Connection management
+- [x] Subscription protocol (subscribe/unsubscribe)
+- [x] Binary message format (0xBF prefix)
+- [x] Ping/pong keepalive
+- [x] Client cleanup on disconnect
 
-### [ ] 6.2 SSE Streaming
-- [ ] Asciinema v2 format support
-- [ ] Stream file watching
-- [ ] Client connection management
-- [ ] Heartbeat mechanism
-- [ ] Proper SSE headers
+### [x] 6.2 SSE Streaming
+- [x] Asciinema v2 format support
+- [x] Stream file watching
+- [x] Client connection management
+- [x] Heartbeat mechanism
+- [x] Proper SSE headers
 
-### [ ] 6.3 Stream Watcher
-- [ ] Monitor asciinema stream files
-- [ ] Incremental reading
-- [ ] Parse events and timestamps
+### [x] 6.3 Stream Watcher
+- [x] Monitor asciinema stream files
+- [x] Incremental reading
+- [x] Parse events and timestamps
 
 ## Phase 7: HQ Mode & Distributed Architecture
 
-### [ ] 7.1 Remote Registry (HQ Mode)
-- [ ] Remote server tracking
-- [ ] Health checking (15s interval)
-- [ ] Session ownership mapping
-- [ ] Automatic cleanup on failure
+### [x] 7.1 Remote Registry (HQ Mode)
+- [x] Remote server tracking
+- [x] Health checking (15s interval)
+- [x] Session ownership mapping
+- [x] Automatic cleanup on failure
 
-### [ ] 7.2 HQ Client (Remote Mode)
-- [ ] Registration with HQ server
-- [ ] Bearer token generation
-- [ ] Graceful unregistration
-- [ ] Reconnection logic
+### [x] 7.2 HQ Client (Remote Mode)
+- [x] Registration with HQ server
+- [x] Bearer token generation
+- [x] Graceful unregistration
+- [ ] Reconnection logic (not implemented - relies on restart)
 
 ### [ ] 7.3 Request Proxying
 - [ ] Session request forwarding

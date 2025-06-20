@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -38,12 +39,17 @@ type CreateSessionRequest struct {
 
 // ListSessions lists all sessions
 func (h *Handler) ListSessions(c *gin.Context) {
+	log.Printf("[ListSessions] Request from %s", c.ClientIP())
+	
 	// Get local sessions
 	localSessions, err := h.sessionManager.ListSessions()
 	if err != nil {
+		log.Printf("[ListSessions] Error listing sessions: %v", err)
 		c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to list sessions: %v", err)})
 		return
 	}
+	
+	log.Printf("[ListSessions] Found %d local sessions", len(localSessions))
 
 	// Convert to response format
 	sessions := make([]SessionResponse, 0)
@@ -86,16 +92,23 @@ func (h *Handler) ListSessions(c *gin.Context) {
 		}
 	}
 
+	log.Printf("[ListSessions] Returning %d total sessions", len(sessions))
 	c.JSON(200, sessions)
 }
 
 // CreateSession creates a new session
 func (h *Handler) CreateSession(c *gin.Context) {
+	log.Printf("[CreateSession] Request from %s", c.ClientIP())
+	
 	var req CreateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[CreateSession] Invalid request body: %v", err)
 		c.JSON(400, gin.H{"error": "Invalid request body"})
 		return
 	}
+	
+	log.Printf("[CreateSession] Command: %v, WorkingDir: %s, Name: %s, RemoteID: %s", 
+		req.Command, req.WorkingDir, req.Name, req.RemoteID)
 
 	// If HQ mode and remoteId specified, forward to remote
 	if h.config.IsHQMode && req.RemoteID != "" {
@@ -113,10 +126,12 @@ func (h *Handler) CreateSession(c *gin.Context) {
 	})
 
 	if err != nil {
+		log.Printf("[CreateSession] Failed to create session: %v", err)
 		c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to create session: %v", err)})
 		return
 	}
 
+	log.Printf("[CreateSession] Created session with ID: %s", sessionInfo.ID)
 	c.JSON(200, gin.H{"sessionId": sessionInfo.ID})
 }
 
@@ -156,6 +171,14 @@ func (h *Handler) GetSession(c *gin.Context) {
 // KillSession kills a session
 func (h *Handler) KillSession(c *gin.Context) {
 	sessionID := c.Param("id")
+	log.Printf("[KillSession] Request for session: %q from %s", sessionID, c.ClientIP())
+	
+	// Check for empty session ID
+	if sessionID == "" {
+		log.Printf("[KillSession] Empty session ID")
+		c.JSON(400, gin.H{"error": "Session ID is required"})
+		return
+	}
 
 	// Check if it's a remote session in HQ mode
 	if h.config.IsHQMode && h.remoteRegistry != nil {
@@ -167,10 +190,12 @@ func (h *Handler) KillSession(c *gin.Context) {
 
 	// Kill local session
 	if err := h.sessionManager.KillSession(sessionID); err != nil {
+		log.Printf("[KillSession] Failed to kill session %s: %v", sessionID, err)
 		c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to kill session: %v", err)})
 		return
 	}
 
+	log.Printf("[KillSession] Successfully killed session %s", sessionID)
 	c.JSON(200, gin.H{"success": true, "message": "Session killed"})
 }
 
@@ -306,6 +331,7 @@ func (h *Handler) StreamSession(c *gin.Context) {
 // SendInput sends input to a session
 func (h *Handler) SendInput(c *gin.Context) {
 	sessionID := c.Param("id")
+	log.Printf("[SendInput] Request for session %s from %s", sessionID, c.ClientIP())
 
 	// Check if it's a remote session in HQ mode
 	if h.config.IsHQMode && h.remoteRegistry != nil {
@@ -321,9 +347,12 @@ func (h *Handler) SendInput(c *gin.Context) {
 		Key  string `json:"key"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("[SendInput] Invalid request body: %v", err)
 		c.JSON(400, gin.H{"error": "Invalid request body"})
 		return
 	}
+	
+	log.Printf("[SendInput] Session %s - Text: %q, Key: %q", sessionID, req.Text, req.Key)
 
 	// Validate: must have either text or key, not both
 	if (req.Text == "" && req.Key == "") || (req.Text != "" && req.Key != "") {
@@ -340,10 +369,12 @@ func (h *Handler) SendInput(c *gin.Context) {
 	}
 
 	if err != nil {
+		log.Printf("[SendInput] Failed to send input: %v", err)
 		c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to send input: %v", err)})
 		return
 	}
 
+	log.Printf("[SendInput] Successfully sent input to session %s", sessionID)
 	c.JSON(200, gin.H{"success": true})
 }
 

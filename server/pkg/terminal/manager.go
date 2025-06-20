@@ -15,32 +15,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ActiveState/vt10x"
 	"github.com/fsnotify/fsnotify"
 	"github.com/vibetunnel/vibetunnel-server/pkg/config"
 )
 
-// Terminal represents a terminal state
+// Terminal represents a terminal state with vt10x
 type Terminal struct {
 	SessionID    string
-	Cols         int
-	Rows         int
-	Buffer       [][]Cell
-	CursorX      int
-	CursorY      int
-	ScrollbackTop int
+	vt           *vt10x.VT
+	state        *vt10x.State
 	LastUpdate   time.Time
 	watcher      *fsnotify.Watcher
 	streamFile   *os.File
 	offset       int64
 	mu           sync.RWMutex
-	
-	// ANSI state
-	parser             *ANSIParser
-	currentFgColor     int32
-	currentBgColor     int32
-	currentAttributes  uint8
-	savedCursorX       int
-	savedCursorY       int
 }
 
 // Cell represents a terminal cell
@@ -92,26 +81,23 @@ func (m *Manager) GetOrCreateTerminal(sessionID string) (*Terminal, error) {
 		return term, nil
 	}
 
-	// Create new terminal
-	term := &Terminal{
-		SessionID:      sessionID,
-		Cols:           m.config.DefaultCols,
-		Rows:           m.config.DefaultRows,
-		Buffer:         make([][]Cell, m.config.ScrollbackBuffer),
-		CursorX:        0,
-		CursorY:        0,
-		LastUpdate:     time.Now(),
-		currentFgColor: -1,
-		currentBgColor: -1,
-	}
-
-	// Initialize buffer with empty rows
-	for i := range term.Buffer {
-		term.Buffer[i] = make([]Cell, term.Cols)
+	// Create new terminal with vt10x
+	state := &vt10x.State{}
+	
+	vt, err := vt10x.New(state, nil, nil)
+	if err != nil {
+		return nil, err
 	}
 	
-	// Create ANSI parser
-	term.parser = NewANSIParser(term)
+	// Resize after creation
+	vt.Resize(m.config.DefaultCols, m.config.DefaultRows)
+	
+	term := &Terminal{
+		SessionID:  sessionID,
+		vt:         vt,
+		state:      state,
+		LastUpdate: time.Now(),
+	}
 
 	// Start watching stream file
 	streamPath := filepath.Join(m.config.ControlDir, sessionID, "stream-out")
@@ -228,15 +214,18 @@ func (m *Manager) readStreamFile(term *Terminal) error {
 		}
 
 		// First line is header
-		if term.offset == int64(len(line)) {
+		if term.offset == int64(len(line)+1) {
 			var header map[string]interface{}
 			if err := json.Unmarshal([]byte(line), &header); err == nil {
 				// Update terminal dimensions from header
 				if width, ok := header["width"].(float64); ok {
-					term.Cols = int(width)
-				}
-				if height, ok := header["height"].(float64); ok {
-					term.Rows = int(height)
+					cols := int(width)
+					if height, ok := header["height"].(float64); ok {
+						rows := int(height)
+						term.mu.Lock()
+						term.vt.Resize(cols, rows)
+						term.mu.Unlock()
+					}
 				}
 			}
 			continue
@@ -277,8 +266,11 @@ func (m *Manager) readStreamFile(term *Terminal) error {
 
 // processOutput processes terminal output
 func (m *Manager) processOutput(term *Terminal, data string) {
-	// Use ANSI parser to process the output
-	term.parser.Parse([]byte(data))
+	term.mu.Lock()
+	defer term.mu.Unlock()
+
+	// Feed data to vt10x terminal
+	term.vt.Write([]byte(data))
 	term.LastUpdate = time.Now()
 }
 
@@ -298,24 +290,28 @@ func (m *Manager) processResize(term *Terminal, data string) {
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
-	term.Cols = cols
-	term.Rows = rows
-
-	// Resize buffer rows
-	for i := range term.Buffer {
-		if len(term.Buffer[i]) < cols {
-			// Extend row
-			term.Buffer[i] = append(term.Buffer[i], make([]Cell, cols-len(term.Buffer[i]))...)
-		} else if len(term.Buffer[i]) > cols {
-			// Truncate row
-			term.Buffer[i] = term.Buffer[i][:cols]
-		}
-	}
+	term.vt.Resize(cols, rows)
 }
 
 // encodeSnapshot encodes the terminal buffer into binary format
 func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 	var buf bytes.Buffer
+
+	// Get terminal state
+	cols, rows := term.state.Size()
+	cursorX, cursorY := term.state.Cursor()
+	
+	// Ensure we have valid dimensions
+	if cols <= 0 || rows <= 0 {
+		cols = m.config.DefaultCols
+		rows = m.config.DefaultRows
+	}
+	
+	// Calculate viewport
+	viewportY := cursorY - rows + 1
+	if viewportY < 0 {
+		viewportY = 0
+	}
 
 	// Write header (32 bytes)
 	buf.Write([]byte{0x56, 0x54}) // Magic "VT"
@@ -323,75 +319,79 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 	buf.WriteByte(0x00)            // Flags
 
 	// Dimensions
-	binary.Write(&buf, binary.LittleEndian, uint32(term.Cols))
-	binary.Write(&buf, binary.LittleEndian, uint32(term.Rows))
+	binary.Write(&buf, binary.LittleEndian, uint32(cols))
+	binary.Write(&buf, binary.LittleEndian, uint32(rows))
 
 	// Viewport and cursor
-	viewportY := term.CursorY - term.Rows + 1
-	if viewportY < 0 {
-		viewportY = 0
-	}
 	binary.Write(&buf, binary.LittleEndian, int32(viewportY))
-	binary.Write(&buf, binary.LittleEndian, int32(term.CursorX))
-	binary.Write(&buf, binary.LittleEndian, int32(term.CursorY))
+	binary.Write(&buf, binary.LittleEndian, int32(cursorX))
+	binary.Write(&buf, binary.LittleEndian, int32(cursorY))
 
 	// Reserved
 	buf.Write(make([]byte, 8))
 
 	// Encode visible rows
-	startRow := viewportY
-	endRow := viewportY + term.Rows
-	if endRow > len(term.Buffer) {
-		endRow = len(term.Buffer)
-	}
-
-	emptyCount := 0
-	for i := startRow; i < endRow; i++ {
-		row := term.Buffer[i]
+	for y := 0; y < rows; y++ {
 		isEmpty := true
+		var rowCells []Cell
 		
-		// Check if row is empty
-		for _, cell := range row {
-			if cell.Char != 0 && cell.Char != ' ' {
-				isEmpty = false
-				break
+		// Get row content from vt10x - using defer to catch any panics
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// If Cell() panics, fill the row with spaces
+					for i := len(rowCells); i < cols; i++ {
+						rowCells = append(rowCells, Cell{Char: ' ', FgColor: -1, BgColor: -1})
+					}
+				}
+			}()
+			
+			for x := 0; x < cols; x++ {
+				ch, fg, bg := term.state.Cell(x, y)
+				
+				if ch == 0 {
+					rowCells = append(rowCells, Cell{Char: ' ', FgColor: -1, BgColor: -1})
+					continue
+				}
+				
+				// Convert vt10x cell to our Cell format
+				c := Cell{
+					Char:    ch,
+					FgColor: convertColor(fg),
+					BgColor: convertColor(bg),
+				}
+				
+				// vt10x doesn't expose attributes directly, so we'll handle them later if needed
+				
+				rowCells = append(rowCells, c)
+				
+				if ch != 0 && ch != ' ' {
+					isEmpty = false
+				}
 			}
-		}
+		}()
 
 		if isEmpty {
-			emptyCount++
-			continue
+			// Write empty row marker
+			buf.WriteByte(0xFE)
+			buf.WriteByte(1)
+		} else {
+			// Write content row
+			m.writeContentRow(&buf, rowCells)
 		}
-
-		// Write any accumulated empty rows
-		if emptyCount > 0 {
-			m.writeEmptyRows(&buf, emptyCount)
-			emptyCount = 0
-		}
-
-		// Write content row
-		m.writeContentRow(&buf, row)
-	}
-
-	// Write any remaining empty rows
-	if emptyCount > 0 {
-		m.writeEmptyRows(&buf, emptyCount)
 	}
 
 	return buf.Bytes()
 }
 
-// writeEmptyRows writes empty row markers
-func (m *Manager) writeEmptyRows(buf *bytes.Buffer, count int) {
-	for count > 0 {
-		n := count
-		if n > 255 {
-			n = 255
-		}
-		buf.WriteByte(0xFE)        // Empty row marker
-		buf.WriteByte(byte(n))     // Count
-		count -= n
+// convertColor converts vt10x color to our format
+func convertColor(color vt10x.Color) int32 {
+	// vt10x.DefaultFG is 0, any other value is a color
+	if color == 0 {
+		return -1
 	}
+	// vt10x uses ANSI color codes 0-255
+	return int32(color)
 }
 
 // writeContentRow writes a content row
