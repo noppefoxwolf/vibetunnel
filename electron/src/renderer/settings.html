@@ -8,14 +8,14 @@
   <link rel="stylesheet" href="styles/settings.css">
 </head>
 <body>
-  <!-- Custom titlebar -->
+  <!-- Custom titlebar (draggable area only, no custom controls) -->
   <div class="titlebar">
-    <div class="titlebar-controls">
-      <button class="titlebar-button close" id="closeBtn"></button>
-      <button class="titlebar-button minimize" id="minimizeBtn"></button>
-      <button class="titlebar-button maximize" id="maximizeBtn"></button>
-    </div>
     <div class="titlebar-title">Preferences</div>
+    <button class="debug-button" id="debugBtn" title="Toggle Developer Tools">
+      <svg viewBox="0 0 24 24" width="16" height="16">
+        <path fill="currentColor" d="M5,3L4.35,6.34C3.7,6.8 3.16,7.28 2.61,7.85L0,5L5,10L10,5L7.85,2.61C7.28,3.16 6.8,3.7 6.34,4.35L5,3M18.65,6.34L20,3L15,0L10,5L12.15,7.39C12.72,6.84 13.2,6.3 13.66,5.65L15,7L13.66,18.35C13.2,17.7 12.72,17.16 12.15,16.61L10,19L15,24L20,21L18.65,17.66C19.3,17.2 19.84,16.72 20.39,16.15L24,19L19,14L14,19L16.15,21.39C16.72,20.84 17.2,20.3 17.66,19.65L19,21L20.39,7.85C19.84,7.28 19.3,6.8 18.65,6.34Z"/>
+      </svg>
+    </button>
   </div>
 
   <div class="window">
@@ -374,6 +374,6 @@
     </div>
   </div>
   
-  <script src="scripts/settings.js"></script>
+  <script type="module" src="scripts/settings.js"></script>
 </body>
 </html>

@@ -708,6 +708,37 @@ open "vibetunnel://session/$SESSION_NAME"
     app.relaunch();
     app.quit();
   });
+  
+  // Context menu for right-click
+  ipcMain.on('show-context-menu', (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window) {
+      const contextMenu = Menu.buildFromTemplate([
+        {
+          label: 'Inspect Element',
+          click: () => {
+            window.webContents.inspectElement(0, 0);
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => {
+            window.webContents.reload();
+          }
+        },
+        {
+          label: 'Force Reload',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => {
+            window.webContents.reloadIgnoringCache();
+          }
+        }
+      ]);
+      contextMenu.popup({ window });
+    }
+  });
 }
 
 // Setup auto-updater

@@ -32,6 +32,40 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.debug-button {
+  position: absolute;
+  right: 80px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  -webkit-app-region: no-drag;
+}
+
+.debug-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.debug-button:active {
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-50%) scale(0.95);
+}
+
+.debug-button.active {
+  background: rgba(0, 122, 255, 0.3);
+  color: #007aff;
+}
+
 .titlebar-controls {
   position: absolute;
   left: 12px;

@@ -80,10 +80,8 @@ case "$PLATFORM" in
         echo -e "${GREEN}✓ Built for Linux x64${NC}"
         ;;
     MINGW*|MSYS*|CYGWIN*)
-        echo "Building for Windows x64..."
-        cargo build --release --target x86_64-pc-windows-msvc
-        cp target/x86_64-pc-windows-msvc/release/tty-fwd.exe electron/bin/win32-x64/
-        echo -e "${GREEN}✓ Built for Windows x64${NC}"
+        echo -e "${YELLOW}Skipping Rust server for Windows (Unix-only)${NC}"
+        echo -e "${YELLOW}Windows users should use the Go server implementation${NC}"
         ;;
     *)
         echo -e "${RED}Error: Unsupported platform $PLATFORM${NC}"

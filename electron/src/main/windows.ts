@@ -37,7 +37,6 @@ export function createSettingsWindow(initialTab?: string): BrowserWindow {
     minWidth: 800,
     minHeight: 600,
     title: 'VibeTunnel Preferences',
-    frame: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 20, y: 20 },
     resizable: true,
@@ -50,8 +49,7 @@ export function createSettingsWindow(initialTab?: string): BrowserWindow {
 
   windows.settingsWindow.loadFile(path.join(__dirname, '../renderer/settings.html'));
 
-  // Always open DevTools for debugging
-  windows.settingsWindow.webContents.openDevTools();
+  // DevTools disabled by default (can be opened via debug button)
 
   // Send initial tab after window loads
   if (initialTab) {
@@ -78,7 +76,6 @@ export function createWelcomeWindow(): BrowserWindow {
     width: 800,
     height: 600,
     title: 'Welcome to VibeTunnel',
-    frame: false,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 20, y: 20 },
     resizable: false,
@@ -91,8 +88,7 @@ export function createWelcomeWindow(): BrowserWindow {
 
   windows.welcomeWindow.loadFile(path.join(__dirname, '../renderer/welcome.html'));
 
-  // Always open DevTools for debugging
-  windows.welcomeWindow.webContents.openDevTools();
+  // DevTools disabled by default (can be opened via debug button)
 
   windows.welcomeWindow.on('closed', () => {
     windows.welcomeWindow = null;
@@ -117,8 +113,7 @@ export function createConsoleWindow(): BrowserWindow {
 
   windows.consoleWindow.loadFile(path.join(__dirname, '../renderer/console.html'));
 
-  // Always open DevTools for debugging
-  windows.consoleWindow.webContents.openDevTools();
+  // DevTools disabled by default (can be opened via debug button)
 
   windows.consoleWindow.on('closed', () => {
     windows.consoleWindow = null;

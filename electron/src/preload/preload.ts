@@ -128,3 +128,9 @@ const terminalAPI = {
 // to use the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 contextBridge.exposeInMainWorld('terminalAPI', terminalAPI);
+
+// Enable right-click context menu with inspect element
+window.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  ipcRenderer.send('show-context-menu');
+});

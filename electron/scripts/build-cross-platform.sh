@@ -27,8 +27,8 @@ mkdir -p bin/darwin-arm64 bin/darwin-x64 bin/linux-x64 bin/win32-x64
 # Save electron directory path
 ELECTRON_DIR=$(pwd)
 
-# Build Rust tty-fwd binaries
-echo -e "\n${YELLOW}Building Rust tty-fwd server for all platforms...${NC}"
+# Build Rust tty-fwd binaries (Unix platforms only)
+echo -e "\n${YELLOW}Building Rust tty-fwd server for Unix platforms...${NC}"
 cd ../tty-fwd
 
 # Check if Rust is installed
@@ -39,39 +39,31 @@ fi
 
 # Install cross-compilation targets if needed
 echo "Installing Rust cross-compilation targets..."
-rustup target add aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-gnu 2>/dev/null || true
+rustup target add aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl 2>/dev/null || true
 
-# Build for current platform first (usually works best)
-CURRENT_PLATFORM=$(uname -s)
-CURRENT_ARCH=$(uname -m)
+# Build for macOS platforms
+echo "Building Rust server for macOS ARM64..."
+cargo build --release --target aarch64-apple-darwin
+cp target/aarch64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-arm64/"
+echo -e "${GREEN}✓ Built Rust server for macOS ARM64${NC}"
 
-if [ "$CURRENT_PLATFORM" = "Darwin" ]; then
-    if [ "$CURRENT_ARCH" = "arm64" ]; then
-        echo "Building Rust server for macOS ARM64 (native)..."
-        cargo build --release --target aarch64-apple-darwin
-        cp target/aarch64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-arm64/"
-        
-        echo "Building Rust server for macOS x64 (cross-compile)..."
-        cargo build --release --target x86_64-apple-darwin
-        cp target/x86_64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-x64/"
-    else
-        echo "Building Rust server for macOS x64 (native)..."
-        cargo build --release --target x86_64-apple-darwin
-        cp target/x86_64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-x64/"
-        
-        echo "Building Rust server for macOS ARM64 (cross-compile)..."
-        cargo build --release --target aarch64-apple-darwin
-        cp target/aarch64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-arm64/"
-    fi
-fi
+echo "Building Rust server for macOS x64..."
+cargo build --release --target x86_64-apple-darwin
+cp target/x86_64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-x64/"
+echo -e "${GREEN}✓ Built Rust server for macOS x64${NC}"
 
-# Linux build (may require cross-compilation setup on macOS)
-echo "Building Rust server for Linux x64..."
-if cargo build --release --target x86_64-unknown-linux-gnu 2>/dev/null; then
-    cp target/x86_64-unknown-linux-gnu/release/tty-fwd "$ELECTRON_DIR/bin/linux-x64/"
+# Linux build using musl for static linking
+echo "Building Rust server for Linux x64 (musl)..."
+if cargo build --release --target x86_64-unknown-linux-musl 2>/dev/null; then
+    cp target/x86_64-unknown-linux-musl/release/tty-fwd "$ELECTRON_DIR/bin/linux-x64/"
+    echo -e "${GREEN}✓ Built Rust server for Linux x64${NC}"
 else
-    echo -e "${YELLOW}Warning: Linux cross-compilation failed. You may need to set up cross-compilation tools.${NC}"
+    echo -e "${YELLOW}Warning: Linux cross-compilation failed.${NC}"
+    echo -e "${YELLOW}To enable Linux builds from macOS, use Docker or build on Linux.${NC}"
 fi
+
+# Windows - tty-fwd doesn't support Windows
+echo -e "${YELLOW}Skipping Windows: Rust tty-fwd is Unix-only${NC}"
 
 # Build Go vibetunnel binaries
 echo -e "\n${YELLOW}Building Go vibetunnel server for all platforms...${NC}"

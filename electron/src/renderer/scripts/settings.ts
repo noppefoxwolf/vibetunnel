@@ -7,21 +7,28 @@ interface Settings {
   serverPort?: number;
   launchAtLogin?: boolean;
   showDockIcon?: boolean;
-  autoCleanupOnQuit?: boolean;
-  dashboardPassword?: string;
-  accessMode?: 'localhost' | 'network' | 'ngrok';
-  terminalApp?: string;
-  cleanupOnStartup?: boolean;
   serverMode?: 'rust' | 'go';
-  updateChannel?: 'stable' | 'beta';
+  accessMode?: 'localhost' | 'network' | 'ngrok';
+  dashboardPassword?: string;
+  ngrokAuthToken?: string;
+  autoCleanupOnQuit?: boolean;
   debugMode?: boolean;
-  [key: string]: any; // Allow dynamic properties
+  updateChannel?: 'stable' | 'beta';
+  dashboardPort?: number;
+  logLevel?: string;
+  recordingsPath?: string;
+  terminalApp?: string;
+  defaultShell?: string;
+  sessionTimeout?: number;
+  enableTelemetry?: boolean;
+  customCSS?: string;
+  [key: string]: any;
 }
 
 let settings: Settings = {};
 
 // Initialize
-async function initialize(): Promise<void> {
+export async function initialize(): Promise<void> {
   console.log('Initializing settings...');
   
   if (!window.electronAPI) {
@@ -29,7 +36,7 @@ async function initialize(): Promise<void> {
     alert('Settings cannot load: electronAPI not available');
     return;
   }
-  
+
   try {
     await loadSettings();
     applySettingsToUI();
@@ -41,7 +48,7 @@ async function initialize(): Promise<void> {
 }
 
 // Load settings
-async function loadSettings(): Promise<void> {
+export async function loadSettings(): Promise<void> {
   try {
     settings = await window.electronAPI.getSettings();
     console.log('Settings loaded:', settings);
@@ -57,219 +64,350 @@ function getElementById<T extends HTMLElement>(id: string): T | null {
 }
 
 // Apply settings to UI
-function applySettingsToUI(): void {
+export function applySettingsToUI(): void {
   // Type-safe element access
   const serverPort = getElementById<HTMLInputElement>('serverPort');
   if (serverPort) serverPort.value = String(settings.serverPort || 4020);
   
   const launchAtLogin = getElementById<HTMLInputElement>('launchAtLogin');
-  if (launchAtLogin) launchAtLogin.checked = settings.launchAtLogin === true;
+  if (launchAtLogin) launchAtLogin.checked = settings.launchAtLogin || false;
   
   const showDockIcon = getElementById<HTMLInputElement>('showDockIcon');
-  if (showDockIcon) showDockIcon.checked = settings.showDockIcon === true;
-  
-  const autoCleanupOnQuit = getElementById<HTMLInputElement>('autoCleanupOnQuit');
-  if (autoCleanupOnQuit) autoCleanupOnQuit.checked = settings.autoCleanupOnQuit !== false;
-  
-  const passwordProtect = getElementById<HTMLInputElement>('passwordProtect');
-  if (passwordProtect) passwordProtect.checked = !!settings.dashboardPassword;
-  
-  const dashboardPort = getElementById<HTMLInputElement>('dashboardPort');
-  if (dashboardPort) dashboardPort.value = String(settings.serverPort || 4020);
-  
-  const accessMode = getElementById<HTMLSelectElement>('accessMode');
-  if (accessMode) accessMode.value = settings.accessMode || 'localhost';
-  
-  const terminalApp = getElementById<HTMLSelectElement>('terminalApp');
-  if (terminalApp) terminalApp.value = settings.terminalApp || 'default';
-  
-  const cleanupOnStartup = getElementById<HTMLInputElement>('cleanupOnStartup');
-  if (cleanupOnStartup) cleanupOnStartup.checked = settings.cleanupOnStartup !== false;
+  if (showDockIcon) showDockIcon.checked = settings.showDockIcon || false;
   
   const serverMode = getElementById<HTMLSelectElement>('serverMode');
   if (serverMode) serverMode.value = settings.serverMode || 'rust';
   
+  const accessMode = getElementById<HTMLSelectElement>('accessMode');
+  if (accessMode) accessMode.value = settings.accessMode || 'localhost';
+  
+  const dashboardPassword = getElementById<HTMLInputElement>('dashboardPassword');
+  if (dashboardPassword) dashboardPassword.value = settings.dashboardPassword || '';
+  
+  const ngrokAuthToken = getElementById<HTMLInputElement>('ngrokAuthToken');
+  if (ngrokAuthToken) ngrokAuthToken.value = settings.ngrokAuthToken || '';
+  
+  const autoCleanupOnQuit = getElementById<HTMLInputElement>('autoCleanupOnQuit');
+  if (autoCleanupOnQuit) autoCleanupOnQuit.checked = settings.autoCleanupOnQuit !== false;
+  
+  const debugMode = getElementById<HTMLInputElement>('debugMode');
+  if (debugMode) debugMode.checked = settings.debugMode || false;
+  
   const updateChannel = getElementById<HTMLSelectElement>('updateChannel');
   if (updateChannel) updateChannel.value = settings.updateChannel || 'stable';
   
-  const debugMode = getElementById<HTMLInputElement>('debugMode');
-  if (debugMode) debugMode.checked = settings.debugMode === true;
+  const dashboardPort = getElementById<HTMLInputElement>('dashboardPort');
+  if (dashboardPort) dashboardPort.value = String(settings.dashboardPort || 4020);
   
-  loadSystemInfo();
+  const logLevel = getElementById<HTMLSelectElement>('logLevel');
+  if (logLevel) logLevel.value = settings.logLevel || 'info';
+  
+  const recordingsPath = getElementById<HTMLInputElement>('recordingsPath');
+  if (recordingsPath) recordingsPath.value = settings.recordingsPath || '';
+  
+  const terminalApp = getElementById<HTMLSelectElement>('terminalApp');
+  if (terminalApp) terminalApp.value = settings.terminalApp || '';
+  
+  const defaultShell = getElementById<HTMLSelectElement>('defaultShell');
+  if (defaultShell) defaultShell.value = settings.defaultShell || '';
+  
+  const sessionTimeout = getElementById<HTMLInputElement>('sessionTimeout');
+  if (sessionTimeout) sessionTimeout.value = String(settings.sessionTimeout || 0);
+  
+  const enableTelemetry = getElementById<HTMLInputElement>('enableTelemetry');
+  if (enableTelemetry) enableTelemetry.checked = settings.enableTelemetry !== false;
+  
+  const customCSS = getElementById<HTMLTextAreaElement>('customCSS');
+  if (customCSS) customCSS.value = settings.customCSS || '';
 }
 
 // Tab navigation
-function setupTabNavigation(): void {
+export function setupTabNavigation(): void {
   console.log('Setting up tab navigation...');
   
-  const tabs = document.querySelectorAll<HTMLElement>('.tab');
-  console.log(`Found ${tabs.length} tabs`);
+  const tabs = document.querySelectorAll('.tab');
+  const tabContents = document.querySelectorAll('.tab-content');
   
   tabs.forEach(tab => {
-    const tabId = tab.getAttribute('data-tab');
-    if (!tabId) return;
-    
-    tab.addEventListener('click', function(this: HTMLElement, e: Event) {
-      e.stopPropagation();
-      console.log(`Tab clicked: ${tabId}`);
+    tab.addEventListener('click', () => {
+      const tabName = tab.getAttribute('data-tab');
+      if (!tabName) return;
       
-      // Remove active from all
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      console.log('Switching to tab:', tabName);
       
-      // Add active to clicked
-      this.classList.add('active');
-      const content = getElementById(tabId);
-      if (content) {
-        content.classList.add('active');
+      // Update active states
+      tabs.forEach(t => t.classList.remove('active'));
+      tabContents.forEach(content => content.classList.remove('active'));
+      
+      tab.classList.add('active');
+      const targetContent = document.getElementById(tabName);
+      if (targetContent) {
+        targetContent.classList.add('active');
+      }
+      
+      // Load dynamic content for specific tabs
+      if (tabName === 'about') {
+        loadAboutInfo();
       }
     });
   });
   
-  // Listen for external tab switches
-  if (window.electronAPI?.on) {
-    window.electronAPI.on('switch-tab', (tabName: string) => {
-      const tab = document.querySelector<HTMLElement>(`.tab[data-tab="${tabName}"]`);
-      if (tab) tab.click();
-    });
+  // Handle tab switching from main process
+  window.electronAPI.switchTab((tabName: string) => {
+    console.log('Switching tab from main process:', tabName);
+    const targetTab = document.querySelector(`[data-tab="${tabName}"]`);
+    if (targetTab) {
+      (targetTab as HTMLElement).click();
+    }
+  });
+}
+
+// Setup all handlers
+function setupAllHandlers(): void {
+  console.log('Setting up handlers...');
+  
+  // Window controls
+  setupWindowControls();
+  
+  // Settings change handlers
+  setupSettingsHandlers();
+  
+  // Button handlers
+  setupButtonHandlers();
+  
+  // Listen for settings changes from main process
+  window.electronAPI.onSettingChanged((key: string, value: any) => {
+    console.log('Setting changed from main process:', key, value);
+    settings[key] = value;
+    applySettingsToUI();
+  });
+}
+
+// Window controls
+function setupWindowControls(): void {
+  const closeBtn = getElementById('closeBtn');
+  const minimizeBtn = getElementById('minimizeBtn');
+  
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => window.electronAPI.closeWindow());
+  }
+  
+  if (minimizeBtn) {
+    minimizeBtn.addEventListener('click', () => window.electronAPI.minimizeWindow());
   }
 }
 
-// Setup all event handlers
-function setupAllHandlers(): void {
-  console.log('Setting up all handlers...');
-  setupButtonHandlers();
-  setupSettingHandlers();
+// Settings handlers
+function setupSettingsHandlers(): void {
+  // Simple toggles
+  const toggleSettings = ['launchAtLogin', 'showDockIcon', 'autoCleanupOnQuit', 'debugMode', 'enableTelemetry'];
+  
+  toggleSettings.forEach(settingName => {
+    const element = getElementById<HTMLInputElement>(settingName);
+    if (element) {
+      element.addEventListener('change', async () => {
+        try {
+          const value = element.checked;
+          console.log(`Setting ${settingName} to ${value}`);
+          await window.electronAPI.setSetting(settingName, value);
+          settings[settingName] = value;
+        } catch (error) {
+          console.error(`Failed to update ${settingName}:`, error);
+          element.checked = !element.checked; // Revert on error
+        }
+      });
+    }
+  });
+  
+  // Select dropdowns
+  const selectSettings = ['serverMode', 'accessMode', 'updateChannel', 'logLevel', 'terminalApp', 'defaultShell'];
+  
+  selectSettings.forEach(settingName => {
+    const element = getElementById<HTMLSelectElement>(settingName);
+    if (element) {
+      element.addEventListener('change', async () => {
+        try {
+          const value = element.value;
+          console.log(`Setting ${settingName} to ${value}`);
+          await window.electronAPI.setSetting(settingName, value);
+          settings[settingName] = value;
+        } catch (error) {
+          console.error(`Failed to update ${settingName}:`, error);
+        }
+      });
+    }
+  });
+  
+  // Number inputs
+  const numberSettings = ['serverPort', 'dashboardPort', 'sessionTimeout'];
+  
+  numberSettings.forEach(settingName => {
+    const element = getElementById<HTMLInputElement>(settingName);
+    if (element) {
+      element.addEventListener('change', async () => {
+        try {
+          const value = parseInt(element.value, 10);
+          if (!isNaN(value)) {
+            console.log(`Setting ${settingName} to ${value}`);
+            await window.electronAPI.setSetting(settingName, value);
+            settings[settingName] = value;
+          }
+        } catch (error) {
+          console.error(`Failed to update ${settingName}:`, error);
+        }
+      });
+    }
+  });
+  
+  // Text inputs
+  const textSettings = ['dashboardPassword', 'ngrokAuthToken', 'recordingsPath'];
+  
+  textSettings.forEach(settingName => {
+    const element = getElementById<HTMLInputElement>(settingName);
+    if (element) {
+      element.addEventListener('change', async () => {
+        try {
+          const value = element.value;
+          console.log(`Setting ${settingName}`);
+          await window.electronAPI.setSetting(settingName, value);
+          settings[settingName] = value;
+        } catch (error) {
+          console.error(`Failed to update ${settingName}:`, error);
+        }
+      });
+    }
+  });
+  
+  // Custom CSS textarea
+  const customCSS = getElementById<HTMLTextAreaElement>('customCSS');
+  if (customCSS) {
+    customCSS.addEventListener('change', async () => {
+      try {
+        const value = customCSS.value;
+        await window.electronAPI.setSetting('customCSS', value);
+        settings.customCSS = value;
+      } catch (error) {
+        console.error('Failed to update custom CSS:', error);
+      }
+    });
+  }
 }
 
 // Button handlers
 function setupButtonHandlers(): void {
-  console.log('Setting up button handlers...');
-  
-  // Test Terminal button
-  const testTerminalBtn = getElementById<HTMLButtonElement>('testTerminalBtn');
-  if (testTerminalBtn) {
-    testTerminalBtn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      console.log('Test Terminal clicked');
-      const terminalApp = getElementById<HTMLSelectElement>('terminalApp')?.value || 'default';
-      try {
-        await window.electronAPI.openTerminal('echo "VibeTunnel terminal test successful!"', {
-          terminal: terminalApp
-        });
-      } catch (error) {
-        alert(`Failed to open terminal: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      }
+  // Debug button
+  const debugBtn = getElementById('debugBtn');
+  if (debugBtn) {
+    debugBtn.addEventListener('click', () => {
+      window.electronAPI.openDevTools();
+      debugBtn.classList.toggle('active');
     });
   }
   
-  // Install CLI button
-  const installCLIBtn = getElementById<HTMLButtonElement>('installCLIBtn');
-  if (installCLIBtn) {
-    installCLIBtn.addEventListener('click', async function(this: HTMLButtonElement, e) {
-      e.preventDefault();
-      console.log('Install CLI clicked');
-      this.disabled = true;
-      this.textContent = 'Installing...';
-      
+  // Helper buttons
+  const installCliBtn = getElementById('installCliBtn');
+  if (installCliBtn) {
+    installCliBtn.addEventListener('click', async () => {
       try {
         await window.electronAPI.installCLI();
-        alert('CLI tool installed successfully!');
-        this.textContent = 'Reinstall CLI Tool';
+        alert('CLI installed successfully!');
       } catch (error) {
-        alert(`Failed to install CLI: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        this.textContent = 'Install CLI Tool';
-      } finally {
-        this.disabled = false;
+        alert(`Failed to install CLI: ${error}`);
       }
     });
   }
   
-  // Other buttons follow similar pattern...
-}
-
-// Setting change handlers
-function setupSettingHandlers(): void {
-  console.log('Setting up setting handlers...');
-  
-  // Server port
-  const serverPort = getElementById<HTMLInputElement>('serverPort');
-  if (serverPort) {
-    serverPort.addEventListener('change', async (e) => {
-      const target = e.target as HTMLInputElement;
-      const port = parseInt(target.value);
-      if (isNaN(port) || port < 1024 || port > 65535) {
-        alert('Port must be between 1024 and 65535');
-        target.value = String(settings.serverPort || 4020);
-        return;
-      }
-      await window.electronAPI.setSetting('serverPort', port);
-      settings.serverPort = port;
+  const openLogBtn = getElementById('openLogBtn');
+  if (openLogBtn) {
+    openLogBtn.addEventListener('click', () => {
+      window.electronAPI.openLogFile();
     });
   }
   
-  // Checkboxes
-  const checkboxIds: string[] = [
-    'launchAtLogin', 'showDockIcon', 'autoCleanupOnQuit',
-    'cleanupOnStartup', 'debugMode'
-  ];
+  const browseRecordingsBtn = getElementById('browseRecordingsBtn');
+  if (browseRecordingsBtn) {
+    browseRecordingsBtn.addEventListener('click', () => {
+      window.electronAPI.openRecordingsFolder();
+    });
+  }
   
-  checkboxIds.forEach(id => {
-    const element = getElementById<HTMLInputElement>(id);
-    if (element) {
-      element.addEventListener('change', async (e) => {
-        const target = e.target as HTMLInputElement;
-        try {
-          await window.electronAPI.setSetting(String(id), target.checked);
-          settings[id] = target.checked;
-        } catch (error) {
-          console.error(`Failed to update ${String(id)}:`, error);
-          target.checked = !target.checked;
-          alert(`Failed to update ${String(id)}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      });
-    }
-  });
+  const openRecordingsBtn = getElementById('openRecordingsBtn');
+  if (openRecordingsBtn) {
+    openRecordingsBtn.addEventListener('click', () => {
+      window.electronAPI.openRecordingsFolder();
+    });
+  }
   
-  // Select elements
-  const selectIds: string[] = [
-    'accessMode', 'terminalApp', 'serverMode', 'updateChannel'
-  ];
+  const checkUpdatesBtn = getElementById('checkUpdatesBtn');
+  if (checkUpdatesBtn) {
+    checkUpdatesBtn.addEventListener('click', () => {
+      window.electronAPI.checkForUpdates();
+    });
+  }
   
-  selectIds.forEach(id => {
-    const element = getElementById<HTMLSelectElement>(id);
-    if (element) {
-      element.addEventListener('change', async (e) => {
-        const target = e.target as HTMLSelectElement;
-        try {
-          await window.electronAPI.setSetting(String(id), target.value);
-          settings[id] = target.value;
-        } catch (error) {
-          console.error(`Failed to update ${String(id)}:`, error);
-          // Revert to previous value
-          target.value = settings[id] || '';
-          alert(`Failed to update ${String(id)}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        }
-      });
-    }
-  });
+  const openConsoleBtn = getElementById('openConsoleBtn');
+  if (openConsoleBtn) {
+    openConsoleBtn.addEventListener('click', () => {
+      window.electronAPI.openConsoleWindow();
+    });
+  }
+  
+  const openDevToolsBtn = getElementById('openDevToolsBtn');
+  if (openDevToolsBtn) {
+    openDevToolsBtn.addEventListener('click', () => {
+      window.electronAPI.openDevTools();
+    });
+  }
+  
+  const openUserDataBtn = getElementById('openUserDataBtn');
+  if (openUserDataBtn) {
+    openUserDataBtn.addEventListener('click', () => {
+      window.electronAPI.openUserDataFolder();
+    });
+  }
+  
+  const resetSettingsBtn = getElementById('resetSettingsBtn');
+  if (resetSettingsBtn) {
+    resetSettingsBtn.addEventListener('click', () => {
+      if (confirm('Are you sure you want to reset all settings? The app will restart.')) {
+        window.electronAPI.resetAllSettings();
+      }
+    });
+  }
+  
+  // External links
+  const websiteLink = getElementById('websiteLink');
+  if (websiteLink) {
+    websiteLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.electronAPI.openExternal('https://vibetunnel.com');
+    });
+  }
+  
+  const githubLink = getElementById('githubLink');
+  if (githubLink) {
+    githubLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      window.electronAPI.openExternal('https://github.com/vibetunnel/vibetunnel');
+    });
+  }
 }
 
-// Load system info
-async function loadSystemInfo(): Promise<void> {
+// Load about info
+async function loadAboutInfo(): Promise<void> {
   try {
     const info = await window.electronAPI.getSystemInfo();
     
-    const appVersion = getElementById<HTMLElement>('appVersion');
-    if (appVersion) appVersion.textContent = info.version;
+    const version = getElementById('version');
+    if (version) version.textContent = info.version;
     
-    const platform = getElementById<HTMLElement>('platform');
+    const platform = getElementById('platform');
     if (platform) platform.textContent = `${info.platform} (${info.arch})`;
     
-    const electronVersion = getElementById<HTMLElement>('electronVersion');
+    const electronVersion = getElementById('electronVersion');
     if (electronVersion) electronVersion.textContent = info.electron;
     
-    const nodeVersion = getElementById<HTMLElement>('nodeVersion');
+    const nodeVersion = getElementById('nodeVersion');
     if (nodeVersion) nodeVersion.textContent = info.node;
   } catch (error) {
     console.error('Failed to load system info:', error);
@@ -282,6 +420,3 @@ if (document.readyState === 'loading') {
 } else {
   initialize();
 }
-
-// Export for testing
-export { initialize, loadSettings, applySettingsToUI, setupTabNavigation };

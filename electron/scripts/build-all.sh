@@ -74,18 +74,17 @@ echo "Building Rust server for macOS x64..."
 cargo build --release --target x86_64-apple-darwin
 cp target/x86_64-apple-darwin/release/tty-fwd "$ELECTRON_DIR/bin/darwin-x64/"
 
-echo "Building Rust server for Linux x64..."
-cargo build --release --target x86_64-unknown-linux-gnu
-cp target/x86_64-unknown-linux-gnu/release/tty-fwd "$ELECTRON_DIR/bin/linux-x64/"
-
-# Windows build (requires additional setup for cross-compilation)
-if command -v x86_64-pc-windows-gnu-gcc &> /dev/null; then
-    echo "Building Rust server for Windows x64..."
-    cargo build --release --target x86_64-pc-windows-gnu
-    cp target/x86_64-pc-windows-gnu/release/tty-fwd.exe "$ELECTRON_DIR/bin/win32-x64/"
+echo "Building Rust server for Linux x64 (musl)..."
+if cargo build --release --target x86_64-unknown-linux-musl 2>/dev/null; then
+    cp target/x86_64-unknown-linux-musl/release/tty-fwd "$ELECTRON_DIR/bin/linux-x64/"
+    echo -e "${GREEN}✓ Built Rust server for Linux x64${NC}"
 else
-    echo -e "${YELLOW}Warning: Windows cross-compilation tools not found. Skipping Windows Rust build.${NC}"
+    echo -e "${YELLOW}Warning: Linux cross-compilation failed. Skipping Linux Rust build.${NC}"
+    echo -e "${YELLOW}Consider using Docker or building on a Linux machine.${NC}"
 fi
+
+# Windows - tty-fwd doesn't support Windows
+echo -e "${YELLOW}Skipping Windows: Rust tty-fwd is Unix-only${NC}"
 
 # Build Go vibetunnel binaries
 echo -e "\n${YELLOW}Building Go vibetunnel server for all platforms...${NC}"
@@ -105,18 +104,26 @@ echo "Building Go server for macOS x64..."
 GOOS=darwin GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/darwin-x64/vibetunnel" ./cmd/vibetunnel
 
 echo "Building Go server for Linux x64..."
-GOOS=linux GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/linux-x64/vibetunnel" ./cmd/vibetunnel
+if GOOS=linux GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/linux-x64/vibetunnel" ./cmd/vibetunnel 2>/dev/null; then
+    echo -e "${GREEN}✓ Built Go server for Linux x64${NC}"
+else
+    echo -e "${YELLOW}Warning: Linux Go build failed. Consider building on Linux.${NC}"
+fi
 
 echo "Building Go server for Windows x64..."
-GOOS=windows GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/win32-x64/vibetunnel.exe" ./cmd/vibetunnel
+if GOOS=windows GOARCH=amd64 go build -o "$ELECTRON_DIR/bin/win32-x64/vibetunnel.exe" ./cmd/vibetunnel 2>/dev/null; then
+    echo -e "${GREEN}✓ Built Go server for Windows x64${NC}"
+else
+    echo -e "${YELLOW}Warning: Windows Go build failed. Consider building on Windows.${NC}"
+fi
 
 # Return to electron directory
 cd "$ELECTRON_DIR"
 
 # Make binaries executable
 echo -e "\n${BLUE}Setting executable permissions...${NC}"
-chmod +x bin/darwin-*/tty-fwd bin/darwin-*/vibetunnel
-chmod +x bin/linux-*/tty-fwd bin/linux-*/vibetunnel
+chmod +x bin/darwin-*/tty-fwd bin/darwin-*/vibetunnel 2>/dev/null || true
+chmod +x bin/linux-*/tty-fwd bin/linux-*/vibetunnel 2>/dev/null || true
 
 # Build Electron apps for all platforms
 echo -e "\n${BLUE}Building Electron apps for all platforms...${NC}"

@@ -42,6 +42,18 @@ interface ElectronAPI {
   // CLI
   installCLI(): Promise<void>;
   
+  // Debug & Dev Tools
+  openConsoleWindow(): void;
+  openDevTools(): void;
+  openUserDataFolder(): void;
+  resetAllSettings(): void;
+  
+  // Tab navigation
+  switchTab(callback: (tabName: string) => void): void;
+  
+  // Settings events
+  onSettingChanged(callback: (key: string, value: any) => void): void;
+  
   // Events
   on(channel: string, callback: (...args: any[]) => void): void;
   removeAllListeners(channel: string): void;
