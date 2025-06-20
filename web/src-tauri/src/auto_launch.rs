@@ -29,6 +29,7 @@ pub fn enable_auto_launch() -> Result<(), String> {
     let auto = AutoLaunchBuilder::new()
         .set_app_name("VibeTunnel")
         .set_app_path(&get_app_path())
+        .set_args(&["--auto-launch"])
         .build()
         .map_err(|e| format!("Failed to build auto-launch: {}", e))?;
         

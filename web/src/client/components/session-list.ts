@@ -101,7 +101,7 @@ export class SessionList extends LitElement {
       : this.sessions;
 
     return html`
-      <div class="font-mono text-sm p-4" style="background: black;">
+      <div class="font-mono text-sm ${this.sessions.length === 0 ? '' : 'p-4 bg-black'}">
         ${filteredSessions.length === 0
           ? html`
               ${this.loading

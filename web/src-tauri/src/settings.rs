@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use directories::ProjectDirs;
-use tauri::State;
+use tauri::{Manager, State};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -116,6 +116,7 @@ pub async fn get_settings(
 pub async fn save_settings(
     settings: Settings,
     _state: State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
     settings.save()?;
     
@@ -124,6 +125,22 @@ pub async fn save_settings(
         crate::auto_launch::enable_auto_launch()?;
     } else {
         crate::auto_launch::disable_auto_launch()?;
+    }
+    
+    // Apply dock icon visibility on macOS
+    #[cfg(target_os = "macos")]
+    {
+        // Check if any windows are visible
+        let has_visible_windows = app.windows().values().any(|w| w.is_visible().unwrap_or(false));
+        
+        if !has_visible_windows && !settings.general.show_dock_icon {
+            // Hide dock icon if no windows are visible and setting is disabled
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        } else if settings.general.show_dock_icon && !has_visible_windows {
+            // Show dock icon if setting is enabled (even with no windows)
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        }
+        // Note: If windows are visible, we always show the dock icon regardless of setting
     }
     
     Ok(())

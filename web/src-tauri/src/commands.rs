@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::State;
+use tauri::{Manager, State};
 use crate::server::HttpServer;
 use crate::state::AppState;
 
@@ -101,11 +101,21 @@ pub async fn start_server(
 ) -> Result<ServerStatus, String> {
     let mut server = state.http_server.write().await;
     
-    if server.is_some() {
+    if let Some(http_server) = server.as_ref() {
+        // Get actual port from running server
+        let port = http_server.port();
+        
+        // Check if ngrok is active
+        let url = if let Some(ngrok_tunnel) = state.ngrok_manager.get_tunnel_status() {
+            ngrok_tunnel.url
+        } else {
+            format!("http://localhost:{}", port)
+        };
+        
         return Ok(ServerStatus {
             running: true,
-            port: 3000, // TODO: Get actual port
-            url: "http://localhost:3000".to_string(),
+            port,
+            url,
         });
     }
     
@@ -121,18 +131,38 @@ pub async fn start_server(
     };
     
     // Start server with appropriate access mode
-    let port = match settings.dashboard.access_mode.as_str() {
-        "network" => http_server.start_with_mode("network").await?,
+    let (port, url) = match settings.dashboard.access_mode.as_str() {
+        "network" => {
+            let port = http_server.start_with_mode("network").await?;
+            (port, format!("http://0.0.0.0:{}", port))
+        },
         "ngrok" => {
             // For ngrok mode, start in localhost and let ngrok handle the tunneling
             let port = http_server.start_with_mode("localhost").await?;
-            // Optionally start ngrok tunnel here if configured
-            if let Some(auth_token) = settings.advanced.ngrok_auth_token {
-                let _ = state.ngrok_manager.start_tunnel(port, Some(auth_token)).await;
-            }
-            port
+            
+            // Try to start ngrok tunnel if auth token is configured
+            let url = if let Some(auth_token) = settings.advanced.ngrok_auth_token {
+                if !auth_token.is_empty() {
+                    match state.ngrok_manager.start_tunnel(port, Some(auth_token)).await {
+                        Ok(tunnel) => tunnel.url,
+                        Err(e) => {
+                            tracing::error!("Failed to start ngrok tunnel: {}", e);
+                            return Err(format!("Failed to start ngrok tunnel: {}", e));
+                        }
+                    }
+                } else {
+                    return Err("Ngrok auth token is required for ngrok access mode".to_string());
+                }
+            } else {
+                return Err("Ngrok auth token is required for ngrok access mode".to_string());
+            };
+            
+            (port, url)
+        },
+        _ => {
+            let port = http_server.start_with_mode("localhost").await?;
+            (port, format!("http://localhost:{}", port))
         }
-        _ => http_server.start_with_mode("localhost").await?,
     };
     
     *server = Some(http_server);
@@ -140,7 +170,7 @@ pub async fn start_server(
     Ok(ServerStatus {
         running: true,
         port,
-        url: format!("http://localhost:{}", port),
+        url,
     })
 }
 
@@ -154,6 +184,9 @@ pub async fn stop_server(
         http_server.stop().await?;
     }
     
+    // Also stop ngrok tunnel if active
+    let _ = state.ngrok_manager.stop_tunnel().await;
+    
     Ok(())
 }
 
@@ -165,10 +198,23 @@ pub async fn get_server_status(
     
     if let Some(http_server) = server.as_ref() {
         let port = http_server.port();
+        
+        // Check if ngrok is active and return its URL
+        let url = if let Some(ngrok_tunnel) = state.ngrok_manager.get_tunnel_status() {
+            ngrok_tunnel.url
+        } else {
+            // Check settings to determine the correct URL format
+            let settings = crate::settings::Settings::load().unwrap_or_default();
+            match settings.dashboard.access_mode.as_str() {
+                "network" => format!("http://0.0.0.0:{}", port),
+                _ => format!("http://localhost:{}", port),
+            }
+        };
+        
         Ok(ServerStatus {
             running: true,
             port,
-            url: format!("http://localhost:{}", port),
+            url,
         })
     } else {
         Ok(ServerStatus {
@@ -177,4 +223,127 @@ pub async fn get_server_status(
             url: String::new(),
         })
     }
+}
+
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
+pub async fn restart_server(
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Stop the current server
+    let mut server = state.http_server.write().await;
+    
+    if let Some(mut http_server) = server.take() {
+        http_server.stop().await?;
+    }
+    
+    // Wait a moment
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+    
+    // Start a new server
+    let terminal_manager = state.terminal_manager.clone();
+    let settings = crate::settings::Settings::load().unwrap_or_default();
+    
+    let mut new_server = HttpServer::new(terminal_manager);
+    new_server.start_with_mode(match settings.dashboard.access_mode.as_str() {
+        "network" => "network",
+        _ => "localhost"
+    }).await?;
+    
+    *server = Some(new_server);
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_server_console(
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Check if server console window already exists
+    if let Some(window) = app_handle.get_webview_window("server-console") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        // Create a new window for the server console
+        tauri::WebviewWindowBuilder::new(
+            &app_handle,
+            "server-console",
+            tauri::WebviewUrl::App("server-console.html".into())
+        )
+        .title("Server Console")
+        .inner_size(800.0, 600.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn show_welcome_screen(
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    // Check if welcome window already exists
+    if let Some(window) = app_handle.get_webview_window("welcome") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+    } else {
+        // Create new welcome window
+        tauri::WebviewWindowBuilder::new(
+            &app_handle,
+            "welcome",
+            tauri::WebviewUrl::App("welcome.html".into())
+        )
+        .title("Welcome to VibeTunnel")
+        .inner_size(700.0, 500.0)
+        .resizable(false)
+        .build()
+        .map_err(|e| e.to_string())?;
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn purge_all_settings(
+    app_handle: tauri::AppHandle,
+    _state: State<'_, AppState>,
+) -> Result<(), String> {
+    // Create default settings and save to clear the file
+    let default_settings = crate::settings::Settings::default();
+    default_settings.save().map_err(|e| e.to_string())?;
+    
+    // Quit the app after a short delay
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        app_handle.exit(0);
+    });
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_dock_icon_visibility(app_handle: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let settings = crate::settings::Settings::load().unwrap_or_default();
+        let has_visible_windows = app_handle.windows().values().any(|w| w.is_visible().unwrap_or(false));
+        
+        if has_visible_windows {
+            // Always show dock icon when windows are visible
+            let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+        } else if settings.general.show_dock_icon {
+            // Show dock icon if setting is enabled
+            let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Regular);
+        } else {
+            // Hide dock icon if setting is disabled and no windows are visible
+            let _ = app_handle.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        }
+    }
+    Ok(())
 }

@@ -8,7 +8,6 @@ import './components/session-create-form.js';
 import './components/session-list.js';
 import './components/session-view.js';
 import './components/session-card.js';
-import './components/settings-window.js';
 import './components/onboarding-flow.js';
 
 import type { Session } from './components/session-list.js';
@@ -17,6 +16,7 @@ import type { SessionCard } from './components/session-card.js';
 // Import services
 import { apiService } from './services/api-service.js';
 import { TauriService, isTauri } from './services/tauri-service.js';
+import { themeService } from './services/theme-service.js';
 import { listen } from '@tauri-apps/api/event';
 
 @customElement('vibetunnel-app')
@@ -34,11 +34,11 @@ export class VibeTunnelApp extends LitElement {
   @state() private selectedSessionId: string | null = null;
   @state() private hideExited = true;
   @state() private showCreateModal = false;
-  @state() private showSettings = false;
   @state() private showOnboarding = false;
+  @state() private currentTheme: 'light' | 'dark' = 'dark';
 
   private hotReloadWs: WebSocket | null = null;
-
+  private unsubscribeTheme?: () => void;
   private unlistenWindowClose?: () => void;
 
   connectedCallback() {
@@ -47,6 +47,11 @@ export class VibeTunnelApp extends LitElement {
     this.loadSessions();
     this.startAutoRefresh();
     this.setupRouting();
+
+    // Subscribe to theme changes
+    this.unsubscribeTheme = themeService.subscribe((theme) => {
+      this.currentTheme = theme;
+    });
 
     // Check if onboarding should be shown
     this.checkOnboardingStatus();
@@ -64,6 +69,11 @@ export class VibeTunnelApp extends LitElement {
     }
     // Clean up routing listeners
     window.removeEventListener('popstate', this.handlePopState);
+
+    // Clean up theme subscription
+    if (this.unsubscribeTheme) {
+      this.unsubscribeTheme();
+    }
 
     // Clean up Tauri listeners
     if (this.unlistenWindowClose) {
@@ -96,8 +106,12 @@ export class VibeTunnelApp extends LitElement {
       this.showCreateModal = true;
     });
 
-    await listen('menu:settings', () => {
-      this.showSettings = true;
+    await listen('menu:settings', async () => {
+      await TauriService.openSettings();
+    });
+
+    await listen('menu:show-tutorial', () => {
+      this.showOnboarding = true;
     });
 
     // Listen for server restart events
@@ -322,78 +336,74 @@ export class VibeTunnelApp extends LitElement {
 
   render() {
     return html`
-      <!-- Error notification overlay -->
-      ${this.errorMessage
-        ? html`
-            <div class="fixed top-4 right-4 z-50">
-              <div class="bg-vs-warning text-vs-bg px-4 py-2 rounded shadow-lg font-mono text-sm">
-                ${this.errorMessage}
-                <button @click=${this.clearError} class="ml-2 text-vs-bg hover:text-vs-muted">
-                  ✕
-                </button>
+      <div class="min-h-screen bg-background text-foreground">
+        <!-- Error notification overlay -->
+        ${this.errorMessage
+          ? html`
+              <div class="fixed top-4 right-4 z-50">
+                <div class="bg-vs-warning text-vs-bg px-4 py-2 rounded shadow-lg font-mono text-sm">
+                  ${this.errorMessage}
+                  <button @click=${this.clearError} class="ml-2 text-vs-bg hover:text-vs-muted">
+                    ✕
+                  </button>
+                </div>
               </div>
-            </div>
-          `
-        : ''}
-      ${this.successMessage
-        ? html`
-            <div class="fixed top-4 right-4 z-50">
-              <div class="bg-vs-link text-vs-bg px-4 py-2 rounded shadow-lg font-mono text-sm">
-                ${this.successMessage}
-                <button @click=${this.clearSuccess} class="ml-2 text-vs-bg hover:text-vs-muted">
-                  ✕
-                </button>
-              </div>
-            </div>
-          `
-        : ''}
-
-      <!-- Main content -->
-      ${this.currentView === 'session' && this.selectedSessionId
-        ? keyed(
-            this.selectedSessionId,
-            html`
-              <session-view
-                .session=${this.sessions.find((s) => s.id === this.selectedSessionId)}
-              ></session-view>
             `
-          )
-        : html`
-            <div class="max-w-4xl mx-auto" style="background: black;">
-              <app-header
-                .sessions=${this.sessions}
-                .hideExited=${this.hideExited}
-                @create-session=${this.handleCreateSession}
-                @hide-exited-change=${this.handleHideExitedChange}
-                @kill-all-sessions=${this.handleKillAll}
-                @clean-exited-sessions=${this.handleCleanExited}
-              ></app-header>
-              <session-list
-                .sessions=${this.sessions}
-                .loading=${this.loading}
-                .hideExited=${this.hideExited}
-                .showCreateModal=${this.showCreateModal}
-                @session-killed=${this.handleSessionKilled}
-                @session-created=${this.handleSessionCreated}
-                @create-modal-close=${this.handleCreateModalClose}
-                @refresh=${this.handleRefresh}
-                @error=${this.handleError}
-                @hide-exited-change=${this.handleHideExitedChange}
-                @kill-all-sessions=${this.handleKillAll}
-              ></session-list>
-            </div>
-          `}
+          : ''}
+        ${this.successMessage
+          ? html`
+              <div class="fixed top-4 right-4 z-50">
+                <div class="bg-vs-link text-vs-bg px-4 py-2 rounded shadow-lg font-mono text-sm">
+                  ${this.successMessage}
+                  <button @click=${this.clearSuccess} class="ml-2 text-vs-bg hover:text-vs-muted">
+                    ✕
+                  </button>
+                </div>
+              </div>
+            `
+          : ''}
 
-      <!-- Settings Window -->
-      <settings-window
-        .visible=${this.showSettings}
-        @settings-close=${() => (this.showSettings = false)}
-      ></settings-window>
+        <!-- Main content -->
+        ${this.currentView === 'session' && this.selectedSessionId
+          ? keyed(
+              this.selectedSessionId,
+              html`
+                <session-view
+                  .session=${this.sessions.find((s) => s.id === this.selectedSessionId)}
+                ></session-view>
+              `
+            )
+          : html`
+              <div class="max-w-4xl mx-auto">
+                <app-header
+                  .sessions=${this.sessions}
+                  .hideExited=${this.hideExited}
+                  @create-session=${this.handleCreateSession}
+                  @hide-exited-change=${this.handleHideExitedChange}
+                  @kill-all-sessions=${this.handleKillAll}
+                  @clean-exited-sessions=${this.handleCleanExited}
+                ></app-header>
+                <session-list
+                  .sessions=${this.sessions}
+                  .loading=${this.loading}
+                  .hideExited=${this.hideExited}
+                  .showCreateModal=${this.showCreateModal}
+                  @session-killed=${this.handleSessionKilled}
+                  @session-created=${this.handleSessionCreated}
+                  @create-modal-close=${this.handleCreateModalClose}
+                  @refresh=${this.handleRefresh}
+                  @error=${this.handleError}
+                  @hide-exited-change=${this.handleHideExitedChange}
+                  @kill-all-sessions=${this.handleKillAll}
+                ></session-list>
+              </div>
+            `}
 
-      <!-- Onboarding Flow -->
-      ${this.showOnboarding
-        ? html` <onboarding-flow @complete=${this.handleOnboardingComplete}></onboarding-flow> `
-        : ''}
+        <!-- Onboarding Flow -->
+        ${this.showOnboarding
+          ? html` <onboarding-flow @complete=${this.handleOnboardingComplete}></onboarding-flow> `
+          : ''}
+      </div>
     `;
   }
 }

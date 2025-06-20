@@ -2,6 +2,88 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme Variables */
+@layer base {
+  :root {
+    /* Light theme colors */
+    --color-background: 255 255 255; /* white */
+    --color-foreground: 15 23 42; /* slate-900 */
+    --color-card: 248 250 252; /* slate-50 */
+    --color-card-foreground: 15 23 42; /* slate-900 */
+    --color-popover: 255 255 255; /* white */
+    --color-popover-foreground: 15 23 42; /* slate-900 */
+    --color-primary: 37 99 235; /* blue-600 */
+    --color-primary-foreground: 248 250 252; /* slate-50 */
+    --color-secondary: 241 245 249; /* slate-100 */
+    --color-secondary-foreground: 15 23 42; /* slate-900 */
+    --color-muted: 241 245 249; /* slate-100 */
+    --color-muted-foreground: 100 116 139; /* slate-500 */
+    --color-accent: 241 245 249; /* slate-100 */
+    --color-accent-foreground: 15 23 42; /* slate-900 */
+    --color-border: 226 232 240; /* slate-200 */
+    --color-input: 226 232 240; /* slate-200 */
+    --color-ring: 37 99 235; /* blue-600 */
+  }
+
+  .dark {
+    /* Dark theme colors */
+    --color-background: 3 7 18; /* slate-950 */
+    --color-foreground: 248 250 252; /* slate-50 */
+    --color-card: 15 23 42; /* slate-900 */
+    --color-card-foreground: 248 250 252; /* slate-50 */
+    --color-popover: 15 23 42; /* slate-900 */
+    --color-popover-foreground: 248 250 252; /* slate-50 */
+    --color-primary: 59 130 246; /* blue-500 */
+    --color-primary-foreground: 248 250 252; /* slate-50 */
+    --color-secondary: 30 41 59; /* slate-800 */
+    --color-secondary-foreground: 248 250 252; /* slate-50 */
+    --color-muted: 30 41 59; /* slate-800 */
+    --color-muted-foreground: 148 163 184; /* slate-400 */
+    --color-accent: 30 41 59; /* slate-800 */
+    --color-accent-foreground: 248 250 252; /* slate-50 */
+    --color-border: 30 41 59; /* slate-800 */
+    --color-input: 30 41 59; /* slate-800 */
+    --color-ring: 59 130 246; /* blue-500 */
+  }
+}
+
+/* Utility classes for theme colors */
+@layer utilities {
+  .bg-background {
+    background-color: rgb(var(--color-background));
+  }
+  .bg-card {
+    background-color: rgb(var(--color-card));
+  }
+  .text-foreground {
+    color: rgb(var(--color-foreground));
+  }
+  .text-card-foreground {
+    color: rgb(var(--color-card-foreground));
+  }
+  .text-muted-foreground {
+    color: rgb(var(--color-muted-foreground));
+  }
+  .border-border {
+    border-color: rgb(var(--color-border));
+  }
+  .bg-primary {
+    background-color: rgb(var(--color-primary));
+  }
+  .text-primary {
+    color: rgb(var(--color-primary));
+  }
+  .text-primary-foreground {
+    color: rgb(var(--color-primary-foreground));
+  }
+  .bg-secondary {
+    background-color: rgb(var(--color-secondary));
+  }
+  .bg-muted {
+    background-color: rgb(var(--color-muted));
+  }
+}
+
 /* Fira Code Variable Font */
 @font-face {
   font-family: 'Fira Code';

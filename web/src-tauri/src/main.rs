@@ -3,7 +3,7 @@
     windows_subsystem = "windows"
 )]
 
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::{AppHandle, Manager, Emitter, WindowEvent};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::menu::Menu;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -25,11 +25,12 @@ use state::AppState;
 use server::HttpServer;
 use commands::ServerStatus;
 
-fn open_settings_window(app: AppHandle) -> Result<(), tauri::Error> {
+#[tauri::command]
+fn open_settings_window(app: AppHandle) -> Result<(), String> {
     // Check if settings window already exists
     if let Some(window) = app.get_webview_window("settings") {
-        window.show()?;
-        window.set_focus()?;
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
     } else {
         // Create new settings window
         tauri::WebviewWindowBuilder::new(
@@ -40,8 +41,10 @@ fn open_settings_window(app: AppHandle) -> Result<(), tauri::Error> {
         .title("VibeTunnel Settings")
         .inner_size(800.0, 600.0)
         .resizable(false)
+        .decorations(false)
         .center()
-        .build()?;
+        .build()
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -84,7 +87,14 @@ fn main() {
             start_server,
             stop_server,
             get_server_status,
+            get_app_version,
+            restart_server,
+            show_server_console,
+            show_welcome_screen,
+            purge_all_settings,
+            update_dock_icon_visibility,
             show_main_window,
+            open_settings_window,
             quit_app,
             settings::get_settings,
             settings::save_settings,
@@ -142,21 +152,53 @@ fn main() {
                     .build(app)?;
             }
 
-            // For debugging: Show main window and dock icon
+            // Load settings to determine initial dock icon visibility
+            let settings = settings::Settings::load().unwrap_or_default();
+            
+            // Check if launched at startup (auto-launch)
+            let is_auto_launched = std::env::args().any(|arg| arg == "--auto-launch" || arg == "--minimized");
+            
             let window = app.get_webview_window("main").unwrap();
-            // window.hide()?; // Commented out for debugging
+            
+            // Hide window if auto-launched
+            if is_auto_launched {
+                window.hide()?;
+                
+                // On macOS, apply dock icon visibility based on settings
+                #[cfg(target_os = "macos")]
+                {
+                    if !settings.general.show_dock_icon {
+                        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    }
+                }
+            } else {
+                // If not auto-launched but dock icon should be hidden, hide it
+                #[cfg(target_os = "macos")]
+                {
+                    if !settings.general.show_dock_icon {
+                        app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    }
+                }
+            }
 
             // Handle window close event to hide instead of quit
-            // DISABLED FOR DEBUGGING - allow normal close behavior
-            /*
             let window_clone = window.clone();
             window.on_window_event(move |event| {
                 if let WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     let _ = window_clone.hide();
+                    
+                    // Hide dock icon on macOS when window is hidden (only if settings say so)
+                    #[cfg(target_os = "macos")]
+                    {
+                        if let Ok(settings) = settings::Settings::load() {
+                            if !settings.general.show_dock_icon {
+                                let _ = window_clone.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
+                            }
+                        }
+                    }
                 }
             });
-            */
 
             // Auto-start server with monitoring
             let app_handle = app.handle().clone();
@@ -192,84 +234,12 @@ fn handle_tray_menu_event(app: &AppHandle, event_id: &str) {
                 let _ = open::that(url);
             }
         }
-        "copy_dashboard_url" => {
-            // Copy dashboard URL to clipboard
-            let state = app.state::<AppState>();
-            let server_guard = state.http_server.blocking_read();
-            if let Some(server) = server_guard.as_ref() {
-                let url = format!("http://localhost:{}", server.port());
-                // TODO: Implement clipboard copy
-                tracing::info!("Dashboard URL: {}", url);
-            }
-        }
-        "new_session" => {
-            // Show main window and create new session
-            let _ = show_main_window(app.clone());
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.emit("menu:new-terminal", ());
-            }
-        }
-        "kill_all_sessions" => {
-            // Kill all terminal sessions
-            let state = app.state::<AppState>();
-            let terminal_manager = state.terminal_manager.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = terminal_manager.close_all_sessions().await;
-            });
-        }
-        "access_localhost" | "access_network" | "access_ngrok" => {
-            // Update access mode
-            let mode = match event_id {
-                "access_localhost" => "localhost",
-                "access_network" => "network",
-                "access_ngrok" => "ngrok",
-                _ => "localhost",
-            };
-            
-            // Update settings
-            tauri::async_runtime::spawn(async move {
-                if let Ok(mut settings) = settings::Settings::load() {
-                    settings.dashboard.access_mode = mode.to_string();
-                    let _ = settings.save();
-                }
-            });
-        }
-        "configure_ngrok" => {
-            // Open settings window to ngrok configuration
-            let _ = open_settings_window(app.clone());
-        }
-        "install_cli" => {
-            // Install CLI tool
-            tauri::async_runtime::spawn(async move {
-                match cli_installer::install_cli_tool() {
-                    Ok(result) => {
-                        tracing::info!("CLI tool installed: {}", result.message);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to install CLI tool: {}", e);
-                    }
-                }
-            });
-        }
-        "open_logs" => {
-            // Open logs directory
-            if let Ok(log_dir) = app.path().app_log_dir() {
-                let _ = open::that(log_dir);
-            }
-        }
-        "debug_console" => {
-            // TODO: Show debug console window
-            tracing::info!("Debug console requested");
-        }
         "show_tutorial" => {
             // Show onboarding/tutorial
             let _ = show_main_window(app.clone());
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.emit("menu:show-tutorial", ());
             }
-        }
-        "documentation" => {
-            let _ = open::that("https://vibetunnel.sh/docs");
         }
         "website" => {
             let _ = open::that("https://vibetunnel.sh");
@@ -370,6 +340,12 @@ fn show_main_window(app: AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         window.show().map_err(|e| e.to_string())?;
         window.set_focus().map_err(|e| e.to_string())?;
+        
+        // Show dock icon on macOS when window is shown
+        #[cfg(target_os = "macos")]
+        {
+            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        }
     }
     Ok(())
 }
@@ -501,11 +477,21 @@ async fn perform_server_health_check(state: &AppState) -> bool {
 async fn start_server_internal(state: &AppState) -> Result<ServerStatus, String> {
     let mut server = state.http_server.write().await;
     
-    if server.is_some() {
+    if let Some(http_server) = server.as_ref() {
+        // Get actual port from running server
+        let port = http_server.port();
+        
+        // Check if ngrok is active
+        let url = if let Some(ngrok_tunnel) = state.ngrok_manager.get_tunnel_status() {
+            ngrok_tunnel.url
+        } else {
+            format!("http://localhost:{}", port)
+        };
+        
         return Ok(ServerStatus {
             running: true,
-            port: 3000, // TODO: Get actual port
-            url: "http://localhost:3000".to_string(),
+            port,
+            url,
         });
     }
     
@@ -521,18 +507,38 @@ async fn start_server_internal(state: &AppState) -> Result<ServerStatus, String>
     };
     
     // Start server with appropriate access mode
-    let port = match settings.dashboard.access_mode.as_str() {
-        "network" => http_server.start_with_mode("network").await?,
+    let (port, url) = match settings.dashboard.access_mode.as_str() {
+        "network" => {
+            let port = http_server.start_with_mode("network").await?;
+            (port, format!("http://0.0.0.0:{}", port))
+        },
         "ngrok" => {
             // For ngrok mode, start in localhost and let ngrok handle the tunneling
             let port = http_server.start_with_mode("localhost").await?;
-            // Optionally start ngrok tunnel here if configured
-            if let Some(auth_token) = settings.advanced.ngrok_auth_token {
-                let _ = state.ngrok_manager.start_tunnel(port, Some(auth_token)).await;
-            }
-            port
+            
+            // Try to start ngrok tunnel if auth token is configured
+            let url = if let Some(auth_token) = settings.advanced.ngrok_auth_token {
+                if !auth_token.is_empty() {
+                    match state.ngrok_manager.start_tunnel(port, Some(auth_token)).await {
+                        Ok(tunnel) => tunnel.url,
+                        Err(e) => {
+                            tracing::error!("Failed to start ngrok tunnel: {}", e);
+                            return Err(format!("Failed to start ngrok tunnel: {}", e));
+                        }
+                    }
+                } else {
+                    return Err("Ngrok auth token is required for ngrok access mode".to_string());
+                }
+            } else {
+                return Err("Ngrok auth token is required for ngrok access mode".to_string());
+            };
+            
+            (port, url)
+        },
+        _ => {
+            let port = http_server.start_with_mode("localhost").await?;
+            (port, format!("http://localhost:{}", port))
         }
-        _ => http_server.start_with_mode("localhost").await?,
     };
     
     *server = Some(http_server);
@@ -540,7 +546,7 @@ async fn start_server_internal(state: &AppState) -> Result<ServerStatus, String>
     Ok(ServerStatus {
         running: true,
         port,
-        url: format!("http://localhost:{}", port),
+        url,
     })
 }
 
@@ -551,6 +557,9 @@ async fn stop_server_internal(state: &AppState) -> Result<(), String> {
         http_server.stop().await?;
     }
     
+    // Also stop ngrok tunnel if active
+    let _ = state.ngrok_manager.stop_tunnel().await;
+    
     Ok(())
 }
 
@@ -559,10 +568,23 @@ async fn get_server_status_internal(state: &AppState) -> Result<ServerStatus, St
     
     if let Some(http_server) = server.as_ref() {
         let port = http_server.port();
+        
+        // Check if ngrok is active and return its URL
+        let url = if let Some(ngrok_tunnel) = state.ngrok_manager.get_tunnel_status() {
+            ngrok_tunnel.url
+        } else {
+            // Check settings to determine the correct URL format
+            let settings = crate::settings::Settings::load().unwrap_or_default();
+            match settings.dashboard.access_mode.as_str() {
+                "network" => format!("http://0.0.0.0:{}", port),
+                _ => format!("http://localhost:{}", port),
+            }
+        };
+        
         Ok(ServerStatus {
             running: true,
             port,
-            url: format!("http://localhost:{}", port),
+            url,
         })
     } else {
         Ok(ServerStatus {

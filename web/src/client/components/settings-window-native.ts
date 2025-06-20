@@ -57,17 +57,40 @@ class SettingsManager {
   }
 
   private async init() {
-    // Load settings
+    // Load settings first and wait for completion
     await this.loadSettings();
 
-    // Setup UI
+    // Setup UI components that depend on settings
     this.setupTabs();
     this.setupToggles();
     this.setupInputs();
     this.bindEvents();
-    
+
+    // Update debug tab visibility based on loaded debug mode setting
+    this.updateDebugTabVisibility();
+
+    // Setup debug tab functionality after visibility is set
+    this.setupDebugTab();
+
     // Ensure initial tab state is correct
     this.ensureInitialTabState();
+
+    // Load and display app version
+    this.loadAppVersion();
+  }
+
+  private async loadAppVersion() {
+    if (window.__TAURI__) {
+      try {
+        const version = await window.__TAURI__.invoke('get_app_version');
+        const versionElement = document.getElementById('appVersion');
+        if (versionElement) {
+          versionElement.textContent = `Version ${version}`;
+        }
+      } catch (error) {
+        console.error('Failed to load app version:', error);
+      }
+    }
   }
 
   private ensureInitialTabState() {
@@ -92,6 +115,15 @@ class SettingsManager {
         const loaded = await window.__TAURI__.invoke('get_settings');
         if (loaded) {
           this.settings = loaded;
+
+          // Also get the actual auto-launch status from the system
+          try {
+            const autoLaunchEnabled = await window.__TAURI__.invoke('get_auto_launch');
+            this.settings.general.launchAtLogin = autoLaunchEnabled;
+          } catch (error) {
+            console.error('Failed to get auto-launch status:', error);
+          }
+
           this.updateUI();
         }
       } catch (error) {
@@ -120,7 +152,7 @@ class SettingsManager {
     tabs.forEach((tab) => {
       tab.addEventListener('click', (e) => {
         e.preventDefault();
-        
+
         // Prevent rapid switching
         if (this.isTabSwitching) {
           return;
@@ -179,8 +211,26 @@ class SettingsManager {
       {
         id: 'launchAtLogin',
         setting: () => this.settings.general.launchAtLogin,
-        update: (v: boolean) => {
+        update: async (v: boolean) => {
           this.settings.general.launchAtLogin = v;
+          // Actually enable/disable auto-launch
+          if (window.__TAURI__) {
+            try {
+              await window.__TAURI__.invoke('set_auto_launch', { enabled: v });
+            } catch (error) {
+              console.error('Failed to set auto-launch:', error);
+              // Revert the toggle if the operation failed
+              this.settings.general.launchAtLogin = !v;
+              const toggle = document.getElementById('launchAtLogin');
+              if (toggle) {
+                if (!v) {
+                  toggle.classList.add('active');
+                } else {
+                  toggle.classList.remove('active');
+                }
+              }
+            }
+          }
         },
       },
       {
@@ -203,6 +253,7 @@ class SettingsManager {
         setting: () => this.settings.advanced.debugMode,
         update: (v: boolean) => {
           this.settings.advanced.debugMode = v;
+          this.updateDebugTabVisibility();
         },
       },
       {
@@ -223,9 +274,9 @@ class SettingsManager {
         }
 
         // Add click handler
-        toggle.addEventListener('click', () => {
+        toggle.addEventListener('click', async () => {
           const isActive = toggle.classList.toggle('active');
-          update(isActive);
+          await update(isActive);
           this.saveSettings();
         });
       }
@@ -332,6 +383,315 @@ class SettingsManager {
   private bindEvents() {
     // Check if password should be shown
     this.togglePasswordField(this.settings.dashboard.enablePassword);
+
+    // Setup close button
+    this.setupWindowControls();
+  }
+
+  private updateDebugTabVisibility() {
+    const debugTab = document.getElementById('debugTab');
+    if (debugTab) {
+      if (this.settings.advanced.debugMode) {
+        debugTab.classList.remove('hidden');
+      } else {
+        debugTab.classList.add('hidden');
+        // If we're currently on the debug tab and it's being hidden, switch to general
+        const activeTab = document.querySelector('.tab.active');
+        if (activeTab && activeTab.getAttribute('data-tab') === 'debug') {
+          const generalTab = document.querySelector('.tab[data-tab="general"]');
+          if (generalTab) {
+            (generalTab as HTMLElement).click();
+          }
+        }
+      }
+    }
+  }
+
+  private async setupDebugTab() {
+    // Setup debug mode toggle in debug tab
+    const debugModeToggle = document.getElementById('debugModeToggle');
+    if (debugModeToggle) {
+      // Set initial state
+      if (this.settings.advanced.debugMode) {
+        debugModeToggle.classList.add('active');
+      }
+
+      // Add click handler
+      debugModeToggle.addEventListener('click', async () => {
+        const isActive = debugModeToggle.classList.toggle('active');
+        this.settings.advanced.debugMode = isActive;
+        // Also update the main debug mode toggle
+        const mainDebugToggle = document.getElementById('debugMode');
+        if (mainDebugToggle) {
+          if (isActive) {
+            mainDebugToggle.classList.add('active');
+          } else {
+            mainDebugToggle.classList.remove('active');
+          }
+        }
+        this.updateDebugTabVisibility();
+        await this.saveSettings();
+      });
+    }
+
+    // Setup debug log level
+    const debugLogLevel = document.getElementById('debugLogLevel') as HTMLSelectElement;
+    if (debugLogLevel) {
+      debugLogLevel.value = this.settings.advanced.logLevel;
+      debugLogLevel.addEventListener('change', async () => {
+        this.settings.advanced.logLevel = debugLogLevel.value;
+        // Also update the main log level select
+        const mainLogLevel = document.getElementById('logLevel') as HTMLSelectElement;
+        if (mainLogLevel) {
+          mainLogLevel.value = debugLogLevel.value;
+        }
+        await this.saveSettings();
+      });
+    }
+
+    // Setup server status monitoring
+    this.startServerStatusMonitoring();
+
+    // Setup API endpoints
+    this.populateApiEndpoints();
+
+    // Setup developer tool buttons
+    this.setupDeveloperTools();
+  }
+
+  private async startServerStatusMonitoring() {
+    const checkServerStatus = async () => {
+      const statusIndicator = document.getElementById('statusIndicator');
+      const statusText = document.getElementById('statusText');
+      const debugServerPort = document.getElementById('debugServerPort');
+      const baseUrlLink = document.getElementById('baseUrlLink') as HTMLAnchorElement;
+
+      if (!statusIndicator || !statusText) return;
+
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:${this.settings.dashboard.serverPort}/api/health`
+        );
+        if (response.ok) {
+          statusIndicator.classList.add('healthy');
+          statusIndicator.classList.remove('unhealthy');
+          statusText.textContent = 'Healthy';
+        } else {
+          statusIndicator.classList.add('unhealthy');
+          statusIndicator.classList.remove('healthy');
+          statusText.textContent = 'Unhealthy';
+        }
+      } catch (_error) {
+        statusIndicator.classList.remove('healthy', 'unhealthy');
+        statusText.textContent = 'Stopped';
+      }
+
+      // Update port display
+      if (debugServerPort) {
+        debugServerPort.textContent = this.settings.dashboard.serverPort.toString();
+      }
+
+      // Update base URL
+      if (baseUrlLink) {
+        const baseUrl = `http://127.0.0.1:${this.settings.dashboard.serverPort}`;
+        baseUrlLink.href = baseUrl;
+        baseUrlLink.textContent = baseUrl;
+        baseUrlLink.onclick = (e) => {
+          e.preventDefault();
+          if (window.__TAURI__) {
+            window.__TAURI__.shell.open(baseUrl);
+          }
+        };
+      }
+    };
+
+    // Check immediately
+    checkServerStatus();
+
+    // Check every 2 seconds
+    setInterval(checkServerStatus, 2000);
+  }
+
+  private populateApiEndpoints() {
+    const endpoints = [
+      { method: 'GET', path: '/api/health', description: 'Health check endpoint' },
+      { method: 'GET', path: '/api/sessions', description: 'List all sessions' },
+      { method: 'POST', path: '/api/sessions', description: 'Create a new session' },
+      { method: 'DELETE', path: '/api/sessions/:id', description: 'Delete a session' },
+      { method: 'GET', path: '/api/sessions/:id/size', description: 'Get terminal size' },
+      { method: 'POST', path: '/api/sessions/:id/resize', description: 'Resize terminal' },
+      { method: 'POST', path: '/api/sessions/:id/upload', description: 'Upload file to session' },
+      {
+        method: 'POST',
+        path: '/api/sessions/:id/download',
+        description: 'Download file from session',
+      },
+    ];
+
+    const endpointsList = document.getElementById('endpointsList');
+    if (!endpointsList) return;
+
+    endpointsList.innerHTML = endpoints
+      .map(
+        (endpoint) => `
+      <div class="endpoint-item">
+        <div class="endpoint-info">
+          <div>
+            <span class="endpoint-method">${endpoint.method}</span>
+            <span class="endpoint-path">${endpoint.path}</span>
+          </div>
+          <div class="endpoint-description">${endpoint.description}</div>
+        </div>
+        ${
+          endpoint.method === 'GET' && !endpoint.path.includes(':id')
+            ? `<button class="button small secondary" data-endpoint="${endpoint.path}">Test</button>`
+            : ''
+        }
+      </div>
+    `
+      )
+      .join('');
+
+    // Add click handlers for test buttons
+    endpointsList.querySelectorAll('button[data-endpoint]').forEach((button) => {
+      button.addEventListener('click', async (e) => {
+        const endpoint = (e.target as HTMLElement).getAttribute('data-endpoint');
+        if (endpoint) {
+          await this.testEndpoint(endpoint);
+        }
+      });
+    });
+  }
+
+  private async testEndpoint(endpoint: string) {
+    const testResult = document.getElementById('testResult');
+    const resultStatus = document.getElementById('resultStatus');
+    const resultText = document.getElementById('resultText');
+
+    if (!testResult || !resultStatus || !resultText) return;
+
+    testResult.classList.remove('hidden');
+    testResult.classList.remove('success', 'error');
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:${this.settings.dashboard.serverPort}${endpoint}`
+      );
+      const data = await response.text();
+
+      if (response.ok) {
+        testResult.classList.add('success');
+        resultStatus.textContent = `✅ ${response.status}`;
+        resultText.textContent = data.length > 100 ? data.substring(0, 100) + '...' : data;
+      } else {
+        testResult.classList.add('error');
+        resultStatus.textContent = `❌ ${response.status}`;
+        resultText.textContent = data || response.statusText;
+      }
+    } catch (error) {
+      testResult.classList.add('error');
+      resultStatus.textContent = '❌ Error';
+      resultText.textContent = error instanceof Error ? error.message : 'Unknown error';
+    }
+
+    // Hide result after 5 seconds
+    setTimeout(() => {
+      testResult.classList.add('hidden');
+    }, 5000);
+  }
+
+  private setupDeveloperTools() {
+    // Restart server button
+    const restartServerBtn = document.getElementById('restartServerBtn');
+    if (restartServerBtn && window.__TAURI__) {
+      restartServerBtn.addEventListener('click', async () => {
+        try {
+          await window.__TAURI__.invoke('restart_server');
+        } catch (error) {
+          console.error('Failed to restart server:', error);
+        }
+      });
+    }
+
+    // Show server console button
+    const showConsoleBtn = document.getElementById('showConsoleBtn');
+    if (showConsoleBtn && window.__TAURI__) {
+      showConsoleBtn.addEventListener('click', async () => {
+        try {
+          await window.__TAURI__.invoke('show_server_console');
+        } catch (error) {
+          console.error('Failed to show server console:', error);
+        }
+      });
+    }
+
+    // Open system console button
+    const openSystemConsoleBtn = document.getElementById('openSystemConsoleBtn');
+    if (openSystemConsoleBtn && window.__TAURI__) {
+      openSystemConsoleBtn.addEventListener('click', async () => {
+        try {
+          await window.__TAURI__.shell.open('/System/Applications/Utilities/Console.app');
+        } catch (error) {
+          console.error('Failed to open Console.app:', error);
+        }
+      });
+    }
+
+    // Show application support button
+    const showAppSupportBtn = document.getElementById('showAppSupportBtn');
+    if (showAppSupportBtn && window.__TAURI__) {
+      showAppSupportBtn.addEventListener('click', async () => {
+        try {
+          const appDataDir = await window.__TAURI__.path.appDataDir();
+          await window.__TAURI__.shell.open(appDataDir);
+        } catch (error) {
+          console.error('Failed to open app data directory:', error);
+        }
+      });
+    }
+
+    // Show welcome button
+    const showWelcomeBtn = document.getElementById('showWelcomeBtn');
+    if (showWelcomeBtn && window.__TAURI__) {
+      showWelcomeBtn.addEventListener('click', async () => {
+        try {
+          await window.__TAURI__.invoke('show_welcome_screen');
+        } catch (error) {
+          console.error('Failed to show welcome screen:', error);
+        }
+      });
+    }
+
+    // Purge settings button
+    const purgeSettingsBtn = document.getElementById('purgeSettingsBtn');
+    if (purgeSettingsBtn && window.__TAURI__) {
+      purgeSettingsBtn.addEventListener('click', async () => {
+        const confirmed = await window.__TAURI__.dialog.confirm(
+          'This will remove all stored preferences and reset the app to its default state. The app will quit after purging.\n\nAre you sure you want to continue?',
+          { title: 'Purge All Settings?', type: 'warning' }
+        );
+
+        if (confirmed) {
+          try {
+            await window.__TAURI__.invoke('purge_all_settings');
+            // App should quit after this
+          } catch (error) {
+            console.error('Failed to purge settings:', error);
+          }
+        }
+      });
+    }
+  }
+
+  private setupWindowControls() {
+    const closeButton = document.getElementById('close-button');
+    if (closeButton && window.__TAURI__) {
+      closeButton.addEventListener('click', async () => {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const currentWindow = getCurrentWindow();
+        await currentWindow.close();
+      });
+    }
   }
 
   private togglePasswordField(show: boolean) {
@@ -398,6 +758,34 @@ class SettingsManager {
 
     // Show/hide password field
     this.togglePasswordField(this.settings.dashboard.enablePassword);
+
+    // Update debug tab visibility
+    this.updateDebugTabVisibility();
+
+    // Update debug tab controls if visible
+    const debugModeToggle = document.getElementById('debugModeToggle');
+    if (debugModeToggle) {
+      if (this.settings.advanced.debugMode) {
+        debugModeToggle.classList.add('active');
+      } else {
+        debugModeToggle.classList.remove('active');
+      }
+    }
+
+    const debugLogLevel = document.getElementById('debugLogLevel') as HTMLSelectElement;
+    if (debugLogLevel) {
+      debugLogLevel.value = this.settings.advanced.logLevel;
+    }
+  }
+
+  private setupWindowControls() {
+    const closeButton = document.getElementById('close-button');
+    if (closeButton && window.__TAURI__) {
+      closeButton.addEventListener('click', () => {
+        const currentWindow = window.__TAURI__.window.getCurrent();
+        currentWindow.close();
+      });
+    }
   }
 }
 

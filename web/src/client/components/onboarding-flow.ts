@@ -31,25 +31,25 @@ export class OnboardingFlow extends LitElement {
       title: 'Welcome to VibeTunnel',
       content: () => html`
         <div class="text-center">
-          <div class="mb-8 transform scale-150">
+          <div class="mb-8">
             <vibe-logo></vibe-logo>
           </div>
-          <h2 class="text-2xl font-bold text-gray-100 mb-4">Your Terminal, Everywhere</h2>
-          <p class="text-lg text-gray-400 mb-6">
-            VibeTunnel lets you create, manage, and share terminal sessions across platforms
+          <h1 class="text-2xl font-light text-foreground mb-3">Welcome to VibeTunnel</h1>
+          <p class="text-base text-muted-foreground mb-8">
+            Create, manage, and share terminal sessions from one central place
           </p>
-          <div class="grid grid-cols-3 gap-4 max-w-2xl mx-auto">
-            <div class="text-center p-4">
-              <div class="text-3xl mb-2">🚀</div>
-              <p class="text-sm text-gray-400">Native Performance</p>
+          <div class="grid grid-cols-3 gap-6 max-w-xl mx-auto">
+            <div class="text-center">
+              <div class="text-2xl mb-2">🚀</div>
+              <p class="text-xs text-muted-foreground">Native Performance</p>
             </div>
-            <div class="text-center p-4">
-              <div class="text-3xl mb-2">🌐</div>
-              <p class="text-sm text-gray-400">Remote Access</p>
+            <div class="text-center">
+              <div class="text-2xl mb-2">🌐</div>
+              <p class="text-xs text-muted-foreground">Remote Access</p>
             </div>
-            <div class="text-center p-4">
-              <div class="text-3xl mb-2">🔒</div>
-              <p class="text-sm text-gray-400">Secure Sharing</p>
+            <div class="text-center">
+              <div class="text-2xl mb-2">🔒</div>
+              <p class="text-xs text-muted-foreground">Secure Sharing</p>
             </div>
           </div>
         </div>
@@ -170,14 +170,18 @@ export class OnboardingFlow extends LitElement {
       title: 'Auto Launch',
       content: () => html`
         <div class="text-center">
-          <div class="text-5xl mb-6">🚀</div>
-          <h2 class="text-2xl font-bold text-gray-100 mb-4">Launch at Startup</h2>
-          <p class="text-lg text-gray-400 mb-6">Start VibeTunnel automatically when you log in</p>
-          <div class="bg-gray-900 rounded-lg p-6 max-w-lg mx-auto">
-            <label class="flex items-center justify-between cursor-pointer group">
+          <div class="text-4xl mb-6">🚀</div>
+          <h2 class="text-xl font-light text-foreground mb-2">Launch at Startup</h2>
+          <p class="text-sm text-muted-foreground mb-6">
+            Start VibeTunnel automatically when you log in
+          </p>
+          <div class="bg-card rounded-lg p-6 max-w-md mx-auto border border-border">
+            <label class="flex items-center justify-between cursor-pointer">
               <div class="text-left">
-                <p class="text-gray-200 font-medium">Enable auto-launch</p>
-                <p class="text-sm text-gray-500">VibeTunnel will start minimized in the tray</p>
+                <p class="text-foreground text-sm font-medium">Enable auto-launch</p>
+                <p class="text-xs text-muted-foreground">
+                  VibeTunnel will start minimized in the tray
+                </p>
               </div>
               <div class="relative">
                 <input
@@ -187,12 +191,12 @@ export class OnboardingFlow extends LitElement {
                   @change=${this.handleAutoLaunchToggle}
                 />
                 <div
-                  class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+                  class="w-11 h-6 bg-muted peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"
                 ></div>
               </div>
             </label>
           </div>
-          <p class="text-sm text-gray-500 mt-6">You can change this later in Settings</p>
+          <p class="text-xs text-muted-foreground mt-6">You can change this later in Settings</p>
         </div>
       `,
     },
@@ -281,14 +285,16 @@ export class OnboardingFlow extends LitElement {
     const hasAction = !!step.action;
 
     return html`
-      <div class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+      <div
+        class="fixed inset-0 bg-background/95 backdrop-blur-sm flex items-center justify-center z-50"
+      >
         <div
-          class="bg-gray-950 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden"
+          class="bg-card rounded-lg shadow-xl border border-border w-full max-w-2xl max-h-[90vh] overflow-hidden"
         >
           <!-- Progress Bar -->
-          <div class="h-1 bg-gray-800">
+          <div class="h-1 bg-muted">
             <div
-              class="h-full bg-gradient-to-r from-blue-600 to-blue-500 transition-all duration-300"
+              class="h-full bg-primary transition-all duration-300"
               style="width: ${((this.currentStep + 1) / this.steps.length) * 100}%"
             ></div>
           </div>
@@ -300,7 +306,7 @@ export class OnboardingFlow extends LitElement {
               ? html`
                   <button
                     @click=${this.handleSkip}
-                    class="absolute top-6 right-6 text-gray-500 hover:text-gray-300 transition-colors"
+                    class="absolute top-6 right-6 text-muted-foreground hover:text-foreground transition-colors text-sm"
                   >
                     Skip
                   </button>
@@ -315,7 +321,7 @@ export class OnboardingFlow extends LitElement {
               <button
                 @click=${this.handleBack}
                 ?disabled=${this.currentStep === 0}
-                class="px-6 py-2 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                class="px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Back
               </button>
@@ -327,10 +333,10 @@ export class OnboardingFlow extends LitElement {
                     <div
                       class="w-2 h-2 rounded-full transition-all duration-300 ${index ===
                       this.currentStep
-                        ? 'w-8 bg-blue-500'
+                        ? 'w-6 bg-primary'
                         : index < this.currentStep
-                          ? 'bg-blue-700'
-                          : 'bg-gray-700'}"
+                          ? 'bg-primary/60'
+                          : 'bg-muted'}"
                     ></div>
                   `
                 )}
@@ -339,7 +345,7 @@ export class OnboardingFlow extends LitElement {
               <button
                 @click=${this.handleNext}
                 ?disabled=${this.isProcessing}
-                class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                class="px-6 py-2 text-sm font-medium bg-primary text-primary-foreground rounded-md hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
               >
                 ${this.isProcessing
                   ? html`

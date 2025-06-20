@@ -229,6 +229,16 @@ export class TauriService {
     return await invoke<NgrokTunnel | null>('get_ngrok_status');
   }
 
+  // Open native settings window
+  static async openSettings(): Promise<void> {
+    if (!isTauri()) {
+      return;
+    }
+    // The backend will handle opening the settings window
+    // via the tray menu event handler
+    return await invoke('open_settings_window');
+  }
+
   // Settings management
   static async getSettings(): Promise<Settings> {
     if (!isTauri()) {
