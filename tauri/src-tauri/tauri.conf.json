@@ -3,32 +3,26 @@
   "productName": "VibeTunnel",
   "identifier": "com.vibetunnel.app",
   "build": {
-    "beforeDevCommand": "npm run bundle",
-    "devUrl": "http://localhost:8081",
-    "beforeBuildCommand": "npm run bundle",
-    "frontendDist": "../public"
+    "beforeDevCommand": "",
+    "devUrl": "http://localhost:4020",
+    "beforeBuildCommand": "",
+    "frontendDist": "../dist"
   },
   "app": {
     "windows": [{
       "title": "VibeTunnel",
-      "width": 1200,
-      "height": 800,
-      "resizable": true,
+      "width": 400,
+      "height": 500,
+      "resizable": false,
       "fullscreen": false,
       "decorations": true,
       "transparent": false,
-      "skipTaskbar": false,
-      "focus": true,
-      "visible": true
+      "skipTaskbar": true,
+      "visible": false,
+      "center": true
     }],
     "security": {
-      "csp": {
-        "default-src": "'self' customprotocol: asset:",
-        "connect-src": "'self' ipc: http: https: tauri: asset: ws: wss: http://localhost:* ws://localhost:*",
-        "img-src": "'self' asset: http: https: data: blob: 'unsafe-inline'",
-        "script-src": "'self' 'unsafe-eval' 'unsafe-inline'",
-        "style-src": "'self' 'unsafe-inline'"
-      }
+      "csp": null
     }
   },
   "bundle": {
