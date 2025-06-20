@@ -1,6 +1,5 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import './vibe-terminal-buffer.js';
 
 export interface Session {
   id: string;
@@ -27,7 +26,6 @@ export class SessionCard extends LitElement {
   @property({ type: Object }) session!: Session;
   @state() private killing = false;
   @state() private killingFrame = 0;
-  @state() private hasEscPrompt = false;
 
   private killingInterval: number | null = null;
 
@@ -46,10 +44,6 @@ export class SessionCard extends LitElement {
         composed: true,
       })
     );
-  }
-
-  private handleEscPromptChange(event: CustomEvent) {
-    this.hasEscPrompt = event.detail.hasEscPrompt;
   }
 
   private async handleKillClick(e: Event) {
@@ -156,9 +150,9 @@ export class SessionCard extends LitElement {
   render() {
     return html`
       <div
-        class="bg-vs-bg rounded shadow cursor-pointer overflow-hidden ${this.killing
+        class="bg-vs-bg rounded shadow cursor-pointer overflow-hidden border border-vs-border ${this.killing
           ? 'opacity-60'
-          : ''} ${this.hasEscPrompt ? 'border-2 border-orange-500' : 'border border-vs-border'}"
+          : ''}"
         @click=${this.handleCardClick}
       >
         <!-- Compact Header -->
@@ -211,12 +205,13 @@ export class SessionCard extends LitElement {
                 </div>
               `
             : html`
-                <vibe-terminal-buffer
-                  .sessionId=${this.session.id}
-                  class="w-full h-full"
-                  style="pointer-events: none;"
-                  @esc-prompt-change=${this.handleEscPromptChange}
-                ></vibe-terminal-buffer>
+                <div class="w-full h-full flex items-center justify-center text-vs-muted">
+                  <div class="text-center font-mono text-xs">
+                    <div class="text-2xl mb-2">⌨️</div>
+                    <div>Terminal Preview</div>
+                    <div class="opacity-50">Click to view</div>
+                  </div>
+                </div>
               `}
         </div>
 
