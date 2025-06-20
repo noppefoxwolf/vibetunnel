@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeTunnel Settings</title>
+    <link rel="stylesheet" href="bundle/output.css">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --primary-color: #29c770;
+            --primary-glow: rgba(41, 199, 112, 0.5);
+            --bg-primary: #000;
+            --bg-secondary: rgba(20, 20, 20, 0.95);
+            --bg-card: rgba(28, 28, 28, 0.6);
+            --bg-card-hover: rgba(30, 30, 30, 0.8);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.12);
+            --text-primary: rgba(255, 255, 255, 0.95);
+            --text-secondary: rgba(255, 255, 255, 0.7);
+            --text-muted: rgba(255, 255, 255, 0.5);
+            --easing: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            font-size: 13px;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            user-select: none;
+            overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Custom Titlebar */
+        .titlebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 38px;
+            background: rgba(28, 28, 28, 0.95);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            -webkit-app-region: drag;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .titlebar-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.85);
+            letter-spacing: 0.3px;
+        }
+
+        /* Main Window */
+        .window {
+            display: flex;
+            height: 100vh;
+            padding-top: 38px;
+            background: var(--bg-primary);
+        }
+
+        /* Sidebar with glassmorphism */
+        .sidebar {
+            width: 200px;
+            background: var(--bg-secondary);
+            backdrop-filter: blur(40px) saturate(180%);
+            -webkit-backdrop-filter: blur(40px) saturate(180%);
+            border-right: 1px solid var(--border-color);
+            padding: 24px 0;
+            position: relative;
+            z-index: 10;
+        }
+
+        .tabs {
+            list-style: none;
+            display: block;
+        }
+
+        .tab {
+            display: flex;
+            align-items: center;
+            padding: 12px 24px;
+            cursor: pointer;
+            transition: all 0.2s var(--easing);
+            font-size: 13px;
+            position: relative;
+            color: var(--text-secondary);
+            font-weight: 400;
+            letter-spacing: 0.2px;
+        }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .tab.active {
+            background: rgba(41, 199, 112, 0.1);
+            color: var(--text-primary);
+        }
+
+        .tab.active::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background: var(--primary-color);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .tab .icon {
+            width: 18px;
+            height: 18px;
+            margin-right: 12px;
+            fill: rgba(255, 255, 255, 0.5);
+            flex-shrink: 0;
+            transition: all 0.2s;
+        }
+
+        .tab:hover .icon {
+            fill: rgba(255, 255, 255, 0.8);
+        }
+
+        .tab.active .icon {
+            fill: var(--primary-color);
+            filter: drop-shadow(0 0 4px var(--primary-glow));
+        }
+
+        .tab span {
+            font-weight: 500;
+        }
+
+        /* Content Area */
+        .content {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+            background: rgba(15, 15, 15, 0.95);
+            backdrop-filter: blur(40px);
+            -webkit-backdrop-filter: blur(40px);
+        }
+
+        .content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .content::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+
+        .content::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+
+        .content::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .tab-content {
+            display: none;
+            opacity: 0;
+            animation: fadeIn 0.3s ease forwards;
+        }
+
+        .tab-content.active {
+            display: block;
+            opacity: 1;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            margin: 0 0 32px 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+        }
+
+        /* Settings cards with staggered animations */
+        .setting-card {
+            background: rgba(25, 25, 25, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 16px;
+            transition: all 0.3s var(--easing);
+            opacity: 0;
+            animation: fadeInUp 0.5s var(--easing) forwards;
+            will-change: transform, opacity;
+        }
+
+        .setting-card:nth-child(1) { animation-delay: 0.1s; }
+        .setting-card:nth-child(2) { animation-delay: 0.15s; }
+        .setting-card:nth-child(3) { animation-delay: 0.2s; }
+        .setting-card:nth-child(4) { animation-delay: 0.25s; }
+        .setting-card:nth-child(5) { animation-delay: 0.3s; }
+        .setting-card:nth-child(6) { animation-delay: 0.35s; }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .setting-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5),
+                        0 0 0 1px var(--border-hover);
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .setting-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .setting-label {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        .setting-label-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 4px;
+            letter-spacing: 0.1px;
+        }
+
+        .setting-label-description {
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        /* Enhanced toggle switch with glow */
+        .toggle {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 13px;
+            cursor: pointer;
+            transition: all 0.3s var(--easing);
+            overflow: hidden;
+        }
+
+        .toggle:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .toggle.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 20px var(--primary-glow),
+                        inset 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            transition: all 0.3s var(--easing);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3),
+                        0 0 0 1px rgba(0, 0, 0, 0.1);
+        }
+
+        .toggle.active .toggle-slider {
+            transform: translateX(22px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4),
+                        0 0 0 1px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Input fields with focus glow */
+        input[type="text"],
+        input[type="number"],
+        input[type="password"],
+        select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text-primary);
+            font-size: 13px;
+            transition: all 0.2s var(--easing);
+            width: 200px;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+
+        input[type="text"]::placeholder,
+        input[type="password"]::placeholder {
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        input[type="text"]:hover,
+        input[type="number"]:hover,
+        input[type="password"]:hover,
+        select:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        input[type="password"]:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 0 3px rgba(41, 199, 112, 0.2),
+                        0 0 20px rgba(41, 199, 112, 0.1);
+        }
+
+        select {
+            cursor: pointer;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23999' d='M10.293 3.293L6 7.586 1.707 3.293A1 1 0 00.293 4.707l5 5a1 1 0 001.414 0l5-5a1 1 0 10-1.414-1.414z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
+            padding-right: 36px;
+        }
+
+        /* Premium radio buttons */
+        .radio-group {
+            display: flex;
+            gap: 16px;
+            margin-top: 12px;
+        }
+
+        .radio-option {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s var(--easing);
+        }
+
+        .radio-option:hover {
+            transform: translateY(-1px);
+        }
+
+        .radio-option input[type="radio"] {
+            appearance: none;
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            margin-right: 8px;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s var(--easing);
+        }
+
+        .radio-option input[type="radio"]:hover {
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .radio-option input[type="radio"]:checked {
+            border-color: var(--primary-color);
+            background: var(--primary-color);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        .radio-option input[type="radio"]:checked::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 6px;
+            height: 6px;
+            background: white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .radio-option span {
+            color: var(--text-secondary);
+            transition: color 0.2s var(--easing);
+        }
+
+        .radio-option:hover span {
+            color: var(--text-primary);
+        }
+
+        /* About page with enhanced design */
+        .about-content {
+            text-align: center;
+            padding-top: 60px;
+        }
+
+        .app-icon {
+            width: 128px;
+            height: 128px;
+            margin: 0 auto 24px;
+            background: url('apple-touch-icon.png') center/contain no-repeat;
+            filter: drop-shadow(0 10px 30px rgba(41, 199, 112, 0.3));
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0%, 100% { 
+                transform: translateY(0);
+                filter: drop-shadow(0 10px 30px rgba(41, 199, 112, 0.3));
+            }
+            50% { 
+                transform: translateY(-10px);
+                filter: drop-shadow(0 20px 40px rgba(41, 199, 112, 0.4));
+            }
+        }
+
+        .app-name {
+            font-size: 36px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 0%, #c0c0c0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .app-version {
+            font-size: 14px;
+            color: var(--text-muted);
+            margin-bottom: 32px;
+        }
+
+        .system-info {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 20px;
+            display: inline-block;
+            text-align: left;
+            font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.8;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        /* Enhanced buttons */
+        .button {
+            padding: 10px 20px;
+            background: linear-gradient(135deg, #29c770 0%, #20a85a 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s var(--easing);
+            position: relative;
+            overflow: hidden;
+            letter-spacing: 0.3px;
+            margin-right: 8px;
+        }
+
+        .button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+
+        .button:active::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .button:hover {
+            background: linear-gradient(135deg, #35d57e 0%, #29c770 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(41, 199, 112, 0.3);
+        }
+
+        .button.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .button.secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 15px rgba(255, 255, 255, 0.1);
+        }
+
+        /* Hidden by default */
+        .hidden {
+            display: none !important;
+        }
+
+        /* Focus visible for accessibility */
+        *:focus-visible {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Custom titlebar (draggable area only, no custom controls) -->
+    <div class="titlebar">
+        <div class="titlebar-title">Preferences</div>
+    </div>
+    
+    <div class="window">
+        <div class="sidebar">
+            <ul class="tabs">
+                <li class="tab active" data-tab="general">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M12 15.5A3.5 3.5 0 0 1 8.5 12A3.5 3.5 0 0 1 12 8.5a3.5 3.5 0 0 1 3.5 3.5a3.5 3.5 0 0 1-3.5 3.5m7.43-2.53c.04-.32.07-.64.07-.97c0-.33-.03-.66-.07-1l2.11-1.63c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.31-.61-.22l-2.49 1c-.52-.39-1.06-.73-1.69-.98l-.37-2.65A.506.506 0 0 0 14 2h-4c-.25 0-.46.18-.5.42l-.37 2.65c-.63.25-1.17.59-1.69.98l-2.49-1c-.22-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64L4.57 11c-.04.34-.07.67-.07 1c0 .33.03.65.07.97l-2.11 1.66c-.19.15-.25.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1.01c.52.4 1.06.74 1.69.99l.37 2.65c.04.24.25.42.5.42h4c.25 0 .46-.18.5-.42l.37-2.65c.63-.26 1.17-.59 1.69-.99l2.49 1.01c.22.08.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.66Z"/>
+                    </svg>
+                    <span>General</span>
+                </li>
+                <li class="tab" data-tab="dashboard">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M13,3V9H21V3M13,21H21V11H13M3,21H11V15H3M3,13H11V3H3V13Z"/>
+                    </svg>
+                    <span>Dashboard</span>
+                </li>
+                <li class="tab" data-tab="advanced">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M12,8A4,4 0 0,1 16,12A4,4 0 0,1 12,16A4,4 0 0,1 8,12A4,4 0 0,1 12,8M12,10A2,2 0 0,0 10,12A2,2 0 0,0 12,14A2,2 0 0,0 14,12A2,2 0 0,0 12,10M10,22C9.75,22 9.54,21.82 9.5,21.58L9.13,18.93C8.5,18.68 7.96,18.34 7.44,17.94L4.95,18.95C4.73,19.03 4.46,18.95 4.34,18.73L2.34,15.27C2.21,15.05 2.27,14.78 2.46,14.63L4.57,12.97L4.5,12L4.57,11L2.46,9.37C2.27,9.22 2.21,8.95 2.34,8.73L4.34,5.27C4.46,5.05 4.73,4.96 4.95,5.05L7.44,6.05C7.96,5.66 8.5,5.32 9.13,5.07L9.5,2.42C9.54,2.18 9.75,2 10,2H14C14.25,2 14.46,2.18 14.5,2.42L14.87,5.07C15.5,5.32 16.04,5.66 16.56,6.05L19.05,5.05C19.27,4.96 19.54,5.05 19.66,5.27L21.66,8.73C21.79,8.95 21.73,9.22 21.54,9.37L19.43,11L19.5,12L19.43,13L21.54,14.63C21.73,14.78 21.79,15.05 21.66,15.27L19.66,18.73C19.54,18.95 19.27,19.04 19.05,18.95L16.56,17.95C16.04,18.34 15.5,18.68 14.87,18.93L14.5,21.58C14.46,21.82 14.25,22 14,22H10Z"/>
+                    </svg>
+                    <span>Advanced</span>
+                </li>
+                <li class="tab" data-tab="about">
+                    <svg class="icon" viewBox="0 0 24 24">
+                        <path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/>
+                    </svg>
+                    <span>About</span>
+                </li>
+            </ul>
+        </div>
+
+        <div class="content">
+            <!-- General Tab -->
+            <div class="tab-content active" id="general">
+                <h1>General</h1>
+                
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Launch at login</div>
+                            <div class="setting-label-description">Start VibeTunnel automatically when you log in</div>
+                        </div>
+                        <div class="toggle" id="launchAtLogin">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Show dock icon</div>
+                            <div class="setting-label-description">Display VibeTunnel in the dock</div>
+                        </div>
+                        <div class="toggle" id="showDockIcon">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Default Terminal</div>
+                            <div class="setting-label-description">Choose your preferred terminal application</div>
+                        </div>
+                        <select id="defaultTerminal">
+                            <option value="system">System Default</option>
+                            <option value="iterm2">iTerm2</option>
+                            <option value="terminal">Terminal.app</option>
+                            <option value="warp">Warp</option>
+                            <option value="hyper">Hyper</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Default Shell</div>
+                            <div class="setting-label-description">Choose your preferred shell</div>
+                        </div>
+                        <select id="defaultShell">
+                            <option value="default">System Default</option>
+                            <option value="/bin/bash">Bash</option>
+                            <option value="/bin/zsh">Zsh</option>
+                            <option value="/usr/local/bin/fish">Fish</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div class="tab-content" id="dashboard">
+                <h1>Dashboard</h1>
+                
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Server Port</div>
+                            <div class="setting-label-description">Port number for the dashboard server</div>
+                        </div>
+                        <input type="number" id="serverPort" min="1024" max="65535" value="4020">
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Password Protection</div>
+                            <div class="setting-label-description">Require a password to access the dashboard</div>
+                        </div>
+                        <div class="toggle" id="enablePassword">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </div>
+                    <div class="setting-row hidden" id="passwordRow">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Dashboard Password</div>
+                        </div>
+                        <input type="password" id="dashboardPassword" placeholder="Enter password">
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-label">
+                        <div class="setting-label-title">Access Mode</div>
+                        <div class="setting-label-description">Control how the dashboard can be accessed</div>
+                    </div>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="accessMode" value="localhost" checked>
+                            <span>Localhost only</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="accessMode" value="network">
+                            <span>Network (LAN)</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="accessMode" value="ngrok">
+                            <span>Ngrok (Internet)</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Auto-cleanup on quit</div>
+                            <div class="setting-label-description">Automatically close all terminal sessions when quitting</div>
+                        </div>
+                        <div class="toggle active" id="autoCleanup">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Advanced Tab -->
+            <div class="tab-content" id="advanced">
+                <h1>Advanced</h1>
+                
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Server Implementation</div>
+                            <div class="setting-label-description">Choose the backend server technology</div>
+                        </div>
+                        <select id="serverMode">
+                            <option value="rust">Rust (tty-fwd)</option>
+                            <option value="swift">Swift (Hummingbird)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Debug Mode</div>
+                            <div class="setting-label-description">Enable additional logging and debug features</div>
+                        </div>
+                        <div class="toggle" id="debugMode">
+                            <div class="toggle-slider"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Log Level</div>
+                            <div class="setting-label-description">Control the verbosity of application logs</div>
+                        </div>
+                        <select id="logLevel">
+                            <option value="error">Error</option>
+                            <option value="warn">Warning</option>
+                            <option value="info" selected>Info</option>
+                            <option value="debug">Debug</option>
+                            <option value="trace">Trace</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Session Timeout</div>
+                            <div class="setting-label-description">Automatically close idle sessions after (minutes, 0 to disable)</div>
+                        </div>
+                        <input type="number" id="sessionTimeout" min="0" max="1440" value="0">
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="setting-row">
+                        <div class="setting-label">
+                            <div class="setting-label-title">Ngrok Auth Token</div>
+                            <div class="setting-label-description">Required for ngrok tunnel access</div>
+                        </div>
+                        <input type="password" id="ngrokAuthToken" placeholder="Enter auth token">
+                    </div>
+                </div>
+
+                <div class="setting-card">
+                    <div class="button-group">
+                        <button class="button secondary" onclick="window.__TAURI__ && window.__TAURI__.shell.open('~/Library/Application Support/com.vibetunnel.app')">Open App Data</button>
+                        <button class="button secondary" onclick="window.__TAURI__ && window.__TAURI__.shell.open('~/Library/Logs/com.vibetunnel.app')">Open Logs</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- About Tab -->
+            <div class="tab-content" id="about">
+                <div class="about-content">
+                    <div class="app-icon"></div>
+                    <div class="app-name">VibeTunnel</div>
+                    <div class="app-version">Version 0.1.0</div>
+                    
+                    <div class="system-info">
+                        <div>Platform: macOS</div>
+                        <div>Architecture: Apple Silicon</div>
+                        <div>Tauri: v2.0</div>
+                        <div>Rust: 1.70+</div>
+                    </div>
+
+                    <div style="margin-top: 32px;">
+                        <button class="button" onclick="window.__TAURI__ && window.__TAURI__.shell.open('https://vibetunnel.sh')">Visit Website</button>
+                        <button class="button secondary" onclick="window.__TAURI__ && window.__TAURI__.shell.open('https://github.com/vibetunnel/vibetunnel')">GitHub</button>
+                    </div>
+
+                    <div style="margin-top: 40px; color: var(--text-muted); font-size: 12px;">
+                        <p>© 2024 VibeTunnel. All rights reserved.</p>
+                        <p style="margin-top: 8px;">Made with ❤️ using Tauri and Rust</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="bundle/settings-bundle.js"></script>
+</body>
+</html>

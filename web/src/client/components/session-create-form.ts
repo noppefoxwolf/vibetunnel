@@ -1,5 +1,6 @@
 import { LitElement, html, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { apiService } from '../services/api-service.js';
 import './file-browser.js';
 
 export interface SessionCreateData {
@@ -149,33 +150,18 @@ export class SessionCreateForm extends LitElement {
     }
 
     try {
-      const response = await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sessionData),
-      });
+      const result = await apiService.postJSON('/api/sessions', sessionData);
 
-      if (response.ok) {
-        const result = await response.json();
+      // Save to localStorage before clearing the fields
+      this.saveToLocalStorage();
 
-        // Save to localStorage before clearing the fields
-        this.saveToLocalStorage();
-
-        this.command = ''; // Clear command on success
-        this.sessionName = ''; // Clear session name on success
-        this.dispatchEvent(
-          new CustomEvent('session-created', {
-            detail: result,
-          })
-        );
-      } else {
-        const error = await response.json();
-        this.dispatchEvent(
-          new CustomEvent('error', {
-            detail: `Failed to create session: ${error.error}`,
-          })
-        );
-      }
+      this.command = ''; // Clear command on success
+      this.sessionName = ''; // Clear session name on success
+      this.dispatchEvent(
+        new CustomEvent('session-created', {
+          detail: result,
+        })
+      );
     } catch (error) {
       console.error('Error creating session:', error);
       this.dispatchEvent(

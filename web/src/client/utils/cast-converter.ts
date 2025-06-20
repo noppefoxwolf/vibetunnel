@@ -1,6 +1,8 @@
 // Utility class to convert asciinema cast files to data for DOM terminal
 // Converts cast format to string data that can be written via terminal.write()
 
+import { apiService } from '../services/api-service.js';
+
 interface CastHeader {
   version: number;
   width: number;
@@ -87,7 +89,7 @@ export class CastConverter {
    * @returns Promise with converted cast data
    */
   static async loadAndConvert(url: string): Promise<ConvertedCast> {
-    const response = await fetch(url);
+    const response = await apiService.fetch(url);
     if (!response.ok) {
       throw new Error(`Failed to load cast file: ${response.status} ${response.statusText}`);
     }
@@ -291,18 +293,18 @@ export class CastConverter {
    * @param streamUrl - URL endpoint for the SSE stream (e.g., /api/sessions/123/stream)
    * @returns Connection object with EventSource and cleanup methods
    */
-  static connectToStream(
+  static async connectToStream(
     terminal: {
       write: (data: string, followCursor?: boolean) => void;
       setTerminalSize?: (cols: number, rows: number) => void;
       dispatchEvent?: (event: CustomEvent) => void;
     },
     streamUrl: string
-  ): {
+  ): Promise<{
     eventSource: EventSource;
     disconnect: () => void;
-  } {
-    const eventSource = new EventSource(streamUrl);
+  }> {
+    const eventSource = await apiService.createEventSource(streamUrl);
 
     // Batching variables for performance
     let outputBuffer = '';

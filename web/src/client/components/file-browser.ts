@@ -1,5 +1,6 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { apiService } from '../services/api-service.js';
 
 interface FileInfo {
   name: string;
@@ -46,14 +47,11 @@ export class FileBrowser extends LitElement {
   private async loadDirectory(dirPath: string) {
     this.loading = true;
     try {
-      const response = await fetch(`/api/fs/browse?path=${encodeURIComponent(dirPath)}`);
-      if (response.ok) {
-        const data: DirectoryListing = await response.json();
-        this.currentPath = data.absolutePath;
-        this.files = data.files;
-      } else {
-        console.error('Failed to load directory');
-      }
+      const data: DirectoryListing = await apiService.getJSON(
+        `/api/fs/browse?path=${encodeURIComponent(dirPath)}`
+      );
+      this.currentPath = data.absolutePath;
+      this.files = data.files;
     } catch (error) {
       console.error('Error loading directory:', error);
     } finally {
@@ -112,25 +110,14 @@ export class FileBrowser extends LitElement {
 
     this.creating = true;
     try {
-      const response = await fetch('/api/mkdir', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          path: this.currentPath,
-          name: this.newFolderName.trim(),
-        }),
+      await apiService.postJSON('/api/mkdir', {
+        path: this.currentPath,
+        name: this.newFolderName.trim(),
       });
 
-      if (response.ok) {
-        // Refresh directory listing
-        await this.loadDirectory(this.currentPath);
-        this.handleCancelCreateFolder();
-      } else {
-        const error = await response.json();
-        alert(`Failed to create folder: ${error.error}`);
-      }
+      // Refresh directory listing
+      await this.loadDirectory(this.currentPath);
+      this.handleCancelCreateFolder();
     } catch (error) {
       console.error('Error creating folder:', error);
       alert('Failed to create folder');

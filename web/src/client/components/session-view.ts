@@ -1,9 +1,12 @@
 import { LitElement, PropertyValues, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Session } from './session-list.js';
+import { apiService } from '../services/api-service.js';
 import './terminal.js';
 import type { Terminal } from './terminal.js';
 import { CastConverter } from '../utils/cast-converter.js';
+import { listen } from '@tauri-apps/api/event';
+import { isTauri } from '../services/tauri-service.js';
 
 @customElement('session-view')
 export class SessionView extends LitElement {
@@ -37,6 +40,7 @@ export class SessionView extends LitElement {
   private resizeTimeout: number | null = null;
   private lastResizeWidth = 0;
   private lastResizeHeight = 0;
+  private menuUnlisteners: Array<() => void> = [];
 
   private keyboardHandler = (e: KeyboardEvent) => {
     if (!this.session) return;
@@ -143,6 +147,11 @@ export class SessionView extends LitElement {
       document.addEventListener('touchend', this.touchEndHandler, { passive: true });
       this.touchListenersAdded = true;
     }
+
+    // Setup Tauri menu event handlers
+    if (isTauri()) {
+      this.setupMenuHandlers();
+    }
   }
 
   disconnectedCallback() {
@@ -162,6 +171,10 @@ export class SessionView extends LitElement {
       document.removeEventListener('touchend', this.touchEndHandler);
       this.touchListenersAdded = false;
     }
+
+    // Remove menu event listeners
+    this.menuUnlisteners.forEach((unlisten) => unlisten());
+    this.menuUnlisteners = [];
 
     // Stop loading animation
     this.stopLoading();
@@ -241,7 +254,7 @@ export class SessionView extends LitElement {
     this.connectToStream();
   }
 
-  private connectToStream() {
+  private async connectToStream() {
     if (!this.terminal || !this.session) return;
 
     // Clean up existing connection
@@ -253,7 +266,7 @@ export class SessionView extends LitElement {
     const streamUrl = `/api/sessions/${this.session.id}/stream`;
 
     // Use CastConverter to connect terminal to stream with reconnection tracking
-    const connection = CastConverter.connectToStream(this.terminal, streamUrl);
+    const connection = await CastConverter.connectToStream(this.terminal, streamUrl);
 
     // Wrap the connection to track reconnections
     const originalEventSource = connection.eventSource;
@@ -388,7 +401,7 @@ export class SessionView extends LitElement {
 
     // Send the input to the session
     try {
-      const response = await fetch(`/api/sessions/${this.session.id}/input`, {
+      const response = await apiService.fetch(`/api/sessions/${this.session.id}/input`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -439,7 +452,7 @@ export class SessionView extends LitElement {
 
     try {
       const url = `/api/sessions/${this.session.id}/snapshot`;
-      const response = await fetch(url);
+      const response = await apiService.fetch(url);
       if (!response.ok) throw new Error(`Failed to fetch snapshot: ${response.status}`);
 
       const castContent = await response.text();
@@ -486,7 +499,7 @@ export class SessionView extends LitElement {
             `Sending resize request: ${cols}x${rows} (was ${this.lastResizeWidth}x${this.lastResizeHeight})`
           );
 
-          const response = await fetch(`/api/sessions/${this.session.id}/resize`, {
+          const response = await apiService.fetch(`/api/sessions/${this.session.id}/resize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ cols: cols, rows: rows }),
@@ -834,6 +847,50 @@ export class SessionView extends LitElement {
       return 'bg-gray-500';
     }
     return this.session.status === 'running' ? 'bg-green-500' : 'bg-orange-500';
+  }
+
+  private async setupMenuHandlers() {
+    // Listen for menu events from Tauri
+    const copyUnlisten = await listen('menu:copy', () => {
+      // Get selected text from terminal if available
+      if (this.terminal && document.getSelection) {
+        const selection = document.getSelection();
+        if (selection && selection.toString()) {
+          navigator.clipboard.writeText(selection.toString());
+        }
+      }
+    });
+    this.menuUnlisteners.push(copyUnlisten);
+
+    const pasteUnlisten = await listen('menu:paste', async () => {
+      // Read from clipboard and send to terminal
+      try {
+        const text = await navigator.clipboard.readText();
+        if (text && this.session) {
+          await this.sendInputText(text);
+        }
+      } catch (error) {
+        console.error('Failed to paste:', error);
+      }
+    });
+    this.menuUnlisteners.push(pasteUnlisten);
+
+    const selectAllUnlisten = await listen('menu:select-all', () => {
+      // Select all text in the terminal
+      if (this.terminal) {
+        const terminalElement = this.querySelector('vibe-terminal');
+        if (terminalElement) {
+          const range = document.createRange();
+          range.selectNodeContents(terminalElement);
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        }
+      }
+    });
+    this.menuUnlisteners.push(selectAllUnlisten);
   }
 
   render() {

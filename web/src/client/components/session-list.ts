@@ -1,8 +1,10 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
+import { apiService } from '../services/api-service.js';
 import './session-create-form.js';
 import './session-card.js';
+import './welcome-screen.js';
 
 export interface Session {
   id: string;
@@ -73,7 +75,7 @@ export class SessionList extends LitElement {
     this.requestUpdate();
 
     try {
-      const response = await fetch('/api/cleanup-exited', {
+      const response = await apiService.fetch('/api/cleanup-exited', {
         method: 'POST',
       });
 
@@ -102,13 +104,13 @@ export class SessionList extends LitElement {
       <div class="font-mono text-sm p-4" style="background: black;">
         ${filteredSessions.length === 0
           ? html`
-              <div class="text-vs-muted text-center py-8">
-                ${this.loading
-                  ? 'Loading sessions...'
-                  : this.hideExited && this.sessions.length > 0
-                    ? 'No running sessions'
-                    : 'No sessions found'}
-              </div>
+              ${this.loading
+                ? html`<div class="text-vs-muted text-center py-8">Loading sessions...</div>`
+                : this.sessions.length === 0
+                  ? html`<welcome-screen
+                      .onCreateNew=${() => (this.showCreateModal = true)}
+                    ></welcome-screen>`
+                  : html`<div class="text-vs-muted text-center py-8">No running sessions</div>`}
             `
           : html`
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

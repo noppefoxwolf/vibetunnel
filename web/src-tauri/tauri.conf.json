@@ -3,9 +3,9 @@
   "productName": "VibeTunnel",
   "identifier": "com.vibetunnel.app",
   "build": {
-    "beforeDevCommand": "",
-    "devUrl": "http://localhost:3000",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run bundle",
+    "devUrl": "http://localhost:8081",
+    "beforeBuildCommand": "npm run bundle",
     "frontendDist": "../public"
   },
   "app": {
@@ -19,7 +19,7 @@
       "transparent": false,
       "skipTaskbar": false,
       "focus": true,
-      "visible": false
+      "visible": true
     }],
     "security": {
       "csp": {
@@ -41,14 +41,19 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": [],
+    "resources": [
+      "icons/menu-bar-icon.png",
+      "icons/menu-bar-icon@2x.png",
+      "icons/tray-icon.png",
+      "icons/tray-icon@2x.png"
+    ],
     "macOS": {
       "frameworks": [],
       "minimumSystemVersion": "10.15",
       "exceptionDomain": "localhost",
       "signingIdentity": null,
       "providerShortName": null,
-      "entitlements": null
+      "entitlements": "entitlements.plist"
     },
     "windows": {
       "certificateThumbprint": null,
@@ -62,47 +67,6 @@
       "appimage": {
         "bundleMediaFramework": true
       }
-    }
-  },
-  "plugins": {
-    "shell": {
-      "open": true,
-      "all": false,
-      "execute": true,
-      "sidecar": true,
-      "scope": []
-    },
-    "process": {
-      "exit": true,
-      "relaunch": true,
-      "relaunchDangerousAllowSymlinkMacos": false
-    },
-    "dialog": {
-      "all": true
-    },
-    "fs": {
-      "all": true,
-      "readFile": true,
-      "writeFile": true,
-      "readDir": true,
-      "copyFile": true,
-      "createDir": true,
-      "removeDir": true,
-      "removeFile": true,
-      "renameFile": true,
-      "exists": true,
-      "scope": ["$APPDATA", "$APPDATA/**", "$RESOURCE/**", "$TEMP/**", "$HOME/.vibetunnel/**"]
-    },
-    "http": {
-      "all": true,
-      "request": true,
-      "scope": ["http://localhost:*", "https://**"]
-    },
-    "notification": {
-      "all": true
-    },
-    "window-state": {
-      "filename": "window-state.json"
     }
   }
 }

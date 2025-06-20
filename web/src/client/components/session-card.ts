@@ -1,5 +1,6 @@
 import { LitElement, html, PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { apiService } from '../services/api-service.js';
 import './terminal.js';
 import type { Terminal } from './terminal.js';
 import { CastConverter } from '../utils/cast-converter.js';
@@ -92,7 +93,7 @@ export class SessionCard extends LitElement {
     if (!this.terminal) return;
 
     try {
-      const response = await fetch(url);
+      const response = await apiService.fetch(url);
       if (!response.ok) throw new Error(`Failed to fetch snapshot: ${response.status}`);
 
       const castContent = await response.text();
@@ -138,15 +139,7 @@ export class SessionCard extends LitElement {
 
     // Send kill request
     try {
-      const response = await fetch(`/api/sessions/${this.session.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error('Failed to kill session:', errorData);
-        throw new Error(`Kill failed: ${response.status}`);
-      }
+      await apiService.delete(`/api/sessions/${this.session.id}`);
 
       // Kill succeeded - dispatch event to notify parent components
       this.dispatchEvent(
@@ -228,7 +221,7 @@ export class SessionCard extends LitElement {
   render() {
     return html`
       <div
-        class="bg-vs-bg border border-vs-border rounded shadow cursor-pointer overflow-hidden ${this
+        class="bg-vs-bg border border-vs-border rounded shadow cursor-pointer overflow-hidden transform transition-all duration-200 hover:scale-105 hover:shadow-lg ${this
           .killing
           ? 'opacity-60'
           : ''}"
@@ -303,7 +296,12 @@ export class SessionCard extends LitElement {
         >
           <div class="flex justify-between items-center min-w-0">
             <span class="${this.getStatusColor()} text-xs flex items-center gap-1 flex-shrink-0">
-              <div class="w-2 h-2 rounded-full ${this.getStatusDotColor()}"></div>
+              <div
+                class="w-2 h-2 rounded-full ${this.getStatusDotColor()} ${this.session.status ===
+                'running'
+                  ? 'animate-pulse'
+                  : ''}"
+              ></div>
               ${this.getStatusText()}
             </span>
             ${this.session.pid

@@ -8,12 +8,16 @@ import './components/session-create-form.js';
 import './components/session-list.js';
 import './components/session-view.js';
 import './components/session-card.js';
+import './components/settings-window.js';
+import './components/onboarding-flow.js';
 
 import type { Session } from './components/session-list.js';
 import type { SessionCard } from './components/session-card.js';
 
-// Import Tauri service
+// Import services
+import { apiService } from './services/api-service.js';
 import { TauriService, isTauri } from './services/tauri-service.js';
+import { listen } from '@tauri-apps/api/event';
 
 @customElement('vibetunnel-app')
 export class VibeTunnelApp extends LitElement {
@@ -30,6 +34,8 @@ export class VibeTunnelApp extends LitElement {
   @state() private selectedSessionId: string | null = null;
   @state() private hideExited = true;
   @state() private showCreateModal = false;
+  @state() private showSettings = false;
+  @state() private showOnboarding = false;
 
   private hotReloadWs: WebSocket | null = null;
 
@@ -41,6 +47,9 @@ export class VibeTunnelApp extends LitElement {
     this.loadSessions();
     this.startAutoRefresh();
     this.setupRouting();
+
+    // Check if onboarding should be shown
+    this.checkOnboardingStatus();
 
     // Setup Tauri-specific handlers
     if (isTauri()) {
@@ -62,10 +71,45 @@ export class VibeTunnelApp extends LitElement {
     }
   }
 
-  private setupTauriHandlers() {
+  private checkOnboardingStatus() {
+    // Check if this is the first launch
+    const onboardingComplete = localStorage.getItem('vibetunnel-onboarding-complete');
+    if (!onboardingComplete) {
+      this.showOnboarding = true;
+    }
+  }
+
+  private handleOnboardingComplete = () => {
+    this.showOnboarding = false;
+    // Optionally show the create modal after onboarding
+    this.showCreateModal = true;
+  };
+
+  private async setupTauriHandlers() {
     // Handle window close to hide instead of quit
     this.unlistenWindowClose = TauriService.onWindowClose(() => {
       TauriService.hideWindow();
+    });
+
+    // Listen for menu events
+    await listen('menu:new-terminal', () => {
+      this.showCreateModal = true;
+    });
+
+    await listen('menu:settings', () => {
+      this.showSettings = true;
+    });
+
+    // Listen for server restart events
+    await listen('server:restarted', (event) => {
+      console.log('Server restarted:', event.payload);
+      this.showSuccess('Server restarted successfully');
+
+      // Reinitialize API service with new server port
+      apiService.reinitialize();
+
+      // Reload sessions
+      this.loadSessions();
     });
   }
 
@@ -96,13 +140,8 @@ export class VibeTunnelApp extends LitElement {
   private async loadSessions() {
     this.loading = true;
     try {
-      const response = await fetch('/api/sessions');
-      if (response.ok) {
-        this.sessions = (await response.json()) as Session[];
-        this.clearError();
-      } else {
-        this.showError('Failed to load sessions');
-      }
+      this.sessions = await apiService.getJSON<Session[]>('/api/sessions');
+      this.clearError();
     } catch (error) {
       console.error('Error loading sessions:', error);
       this.showError('Failed to load sessions');
@@ -344,6 +383,17 @@ export class VibeTunnelApp extends LitElement {
               ></session-list>
             </div>
           `}
+
+      <!-- Settings Window -->
+      <settings-window
+        .visible=${this.showSettings}
+        @settings-close=${() => (this.showSettings = false)}
+      ></settings-window>
+
+      <!-- Onboarding Flow -->
+      ${this.showOnboarding
+        ? html` <onboarding-flow @complete=${this.handleOnboardingComplete}></onboarding-flow> `
+        : ''}
     `;
   }
 }

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import { appWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { open } from '@tauri-apps/plugin-shell';
 import { sendNotification } from '@tauri-apps/plugin-notification';
@@ -32,6 +32,26 @@ export interface ServerStatus {
   running: boolean;
   port: number;
   url: string;
+}
+
+export interface NgrokTunnel {
+  url: string;
+  port: number;
+  status: string;
+}
+
+export interface Settings {
+  launch_at_login: boolean;
+  show_in_dock: boolean;
+  default_shell?: string;
+  default_working_directory?: string;
+  theme: string;
+  font_family: string;
+  font_size: number;
+  cursor_style: string;
+  cursor_blink: boolean;
+  scrollback_lines: number;
+  env_vars: Record<string, string>;
 }
 
 export class TauriService {
@@ -112,28 +132,28 @@ export class TauriService {
     if (!isTauri()) {
       return;
     }
-    await appWindow.hide();
+    await getCurrentWindow().hide();
   }
 
   static async minimizeWindow(): Promise<void> {
     if (!isTauri()) {
       return;
     }
-    await appWindow.minimize();
+    await getCurrentWindow().minimize();
   }
 
   static async maximizeWindow(): Promise<void> {
     if (!isTauri()) {
       return;
     }
-    await appWindow.toggleMaximize();
+    await getCurrentWindow().toggleMaximize();
   }
 
   static async closeWindow(): Promise<void> {
     if (!isTauri()) {
       return;
     }
-    await appWindow.close();
+    await getCurrentWindow().close();
   }
 
   // App lifecycle
@@ -177,7 +197,7 @@ export class TauriService {
       return () => {};
     }
 
-    const unlisten = appWindow.onCloseRequested((event) => {
+    const unlisten = getCurrentWindow().onCloseRequested((event) => {
       event.preventDefault();
       callback();
     });
@@ -185,5 +205,115 @@ export class TauriService {
     return () => {
       unlisten.then((fn) => fn());
     };
+  }
+
+  // ngrok integration
+  static async startNgrokTunnel(port: number, authToken?: string): Promise<NgrokTunnel> {
+    if (!isTauri()) {
+      throw new Error('Not running in Tauri environment');
+    }
+    return await invoke<NgrokTunnel>('start_ngrok_tunnel', { port, authToken });
+  }
+
+  static async stopNgrokTunnel(): Promise<void> {
+    if (!isTauri()) {
+      return;
+    }
+    return await invoke('stop_ngrok_tunnel');
+  }
+
+  static async getNgrokStatus(): Promise<NgrokTunnel | null> {
+    if (!isTauri()) {
+      return null;
+    }
+    return await invoke<NgrokTunnel | null>('get_ngrok_status');
+  }
+
+  // Settings management
+  static async getSettings(): Promise<Settings> {
+    if (!isTauri()) {
+      // Return default settings for web
+      return {
+        launch_at_login: false,
+        show_in_dock: false,
+        theme: 'dark',
+        font_family: 'JetBrains Mono, Monaco, Consolas, monospace',
+        font_size: 14,
+        cursor_style: 'block',
+        cursor_blink: true,
+        scrollback_lines: 10000,
+        env_vars: {},
+      };
+    }
+    return await invoke<Settings>('get_settings');
+  }
+
+  static async saveSettings(settings: Settings): Promise<void> {
+    if (!isTauri()) {
+      return;
+    }
+    return await invoke('save_settings', { settings });
+  }
+
+  static async setAutoLaunch(enabled: boolean): Promise<void> {
+    if (!isTauri()) {
+      return;
+    }
+    return await invoke('set_auto_launch', { enabled });
+  }
+
+  static async getAutoLaunch(): Promise<boolean> {
+    if (!isTauri()) {
+      return false;
+    }
+    return await invoke<boolean>('get_auto_launch');
+  }
+
+  // Terminal detection
+  static async detectSystemTerminals(): Promise<{
+    default: { name: string; path: string; available: boolean } | null;
+    available: Array<{ name: string; path: string; available: boolean }>;
+  }> {
+    if (!isTauri()) {
+      return { default: null, available: [] };
+    }
+    return await invoke('detect_system_terminals');
+  }
+
+  static async getDefaultShell(): Promise<string> {
+    if (!isTauri()) {
+      return '/bin/bash';
+    }
+    return await invoke<string>('get_default_shell');
+  }
+
+  // CLI installation
+  static async installCli(): Promise<{
+    installed: boolean;
+    path: string;
+    message: string;
+  }> {
+    if (!isTauri()) {
+      throw new Error('Not running in Tauri environment');
+    }
+    return await invoke('install_cli');
+  }
+
+  static async uninstallCli(): Promise<{
+    installed: boolean;
+    path: string;
+    message: string;
+  }> {
+    if (!isTauri()) {
+      throw new Error('Not running in Tauri environment');
+    }
+    return await invoke('uninstall_cli');
+  }
+
+  static async checkCliInstalled(): Promise<boolean> {
+    if (!isTauri()) {
+      return false;
+    }
+    return await invoke<boolean>('check_cli_installed');
   }
 }
