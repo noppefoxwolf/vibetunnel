@@ -821,28 +821,28 @@ export class SessionView extends LitElement {
   }
 
   private getStatusColor(): string {
-    if (!this.session) return 'text-vs-muted';
+    if (!this.session) return 'text-dark-text-muted';
     if ('waiting' in this.session && this.session.waiting) {
-      return 'text-vs-muted';
+      return 'text-dark-text-muted';
     }
-    return this.session.status === 'running' ? 'text-vs-user' : 'text-vs-warning';
+    return this.session.status === 'running' ? 'text-accent-green' : 'text-status-warning';
   }
 
   private getStatusDotColor(): string {
-    if (!this.session) return 'bg-gray-500';
+    if (!this.session) return 'bg-dark-text-dim';
     if ('waiting' in this.session && this.session.waiting) {
-      return 'bg-gray-500';
+      return 'bg-dark-text-dim';
     }
-    return this.session.status === 'running' ? 'bg-green-500' : 'bg-orange-500';
+    return this.session.status === 'running' ? 'bg-accent-green' : 'bg-status-warning';
   }
 
   render() {
     if (!this.session) {
       return html`
-        <div class="fixed inset-0 bg-black flex items-center justify-center">
-          <div class="text-vs-text font-mono text-center">
-            <div class="text-2xl mb-2">${this.getLoadingText()}</div>
-            <div class="text-sm text-vs-muted">Waiting for session...</div>
+        <div class="fixed inset-0 bg-dark-bg flex items-center justify-center">
+          <div class="text-dark-text font-mono text-center">
+            <div class="text-2xl mb-2 text-accent-green">${this.getLoadingText()}</div>
+            <div class="text-sm text-dark-text-muted">Waiting for session...</div>
           </div>
         </div>
       `;
@@ -857,63 +857,48 @@ export class SessionView extends LitElement {
           box-shadow: none !important;
         }
         session-view:focus {
-          outline: 2px solid #007acc !important;
+          outline: 2px solid #00ff88 !important;
           outline-offset: -2px;
         }
       </style>
       <div
-        class="flex flex-col bg-vs-bg font-mono"
+        class="flex flex-col bg-dark-bg font-mono"
         style="height: 100vh; height: 100dvh; outline: none !important; box-shadow: none !important;"
       >
-        <!-- Compact Header -->
+        <!-- Header -->
         <div
-          class="flex items-center justify-between px-3 py-2 border-b border-vs-border text-sm min-w-0"
-          style="background: black;"
+          class="flex items-center justify-between px-4 py-3 border-b border-dark-border bg-dark-bg-secondary"
         >
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <button
-              class="font-mono px-2 py-1 rounded transition-colors text-xs flex-shrink-0"
-              style="background: black; color: #d4d4d4; border: 1px solid #569cd6;"
+              class="btn-ghost font-mono text-sm !px-3 !py-1"
               @click=${this.handleBack}
-              @mouseover=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                btn.style.background = '#569cd6';
-                btn.style.color = 'black';
-              }}
-              @mouseout=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                btn.style.background = 'black';
-                btn.style.color = '#d4d4d4';
-              }}
             >
-              BACK
+              ← BACK
             </button>
-            <div class="text-vs-text min-w-0 flex-1 overflow-hidden">
+            <div class="text-dark-text min-w-0 flex-1 overflow-hidden">
               <div
-                class="text-vs-accent text-xs sm:text-sm overflow-hidden text-ellipsis whitespace-nowrap"
-                title="${this.session.name || this.session.command}"
+                class="text-accent-green text-base font-medium overflow-hidden text-ellipsis whitespace-nowrap"
+                title="${this.session.name || this.session.id}"
               >
-                ${this.session.name || this.session.command}
+                ${this.session.name || this.session.id}
               </div>
             </div>
           </div>
-          <div class="flex items-center gap-2 text-xs flex-shrink-0 ml-2">
-            <div class="flex flex-col items-end gap-0">
-              <span class="${this.getStatusColor()} text-xs flex items-center gap-1">
-                <div class="w-2 h-2 rounded-full ${this.getStatusDotColor()}"></div>
+          <div class="flex items-center gap-3 text-xs flex-shrink-0 ml-2">
+            <div class="flex items-center gap-2">
+              <div class="w-2 h-2 rounded-full ${this.getStatusDotColor()}"></div>
+              <span class="${this.getStatusColor()} font-medium">
                 ${this.getStatusText().toUpperCase()}
               </span>
-              ${this.terminalCols > 0 && this.terminalRows > 0
-                ? html`
-                    <span
-                      class="text-vs-muted text-xs opacity-60"
-                      style="font-size: 10px; line-height: 1;"
-                    >
-                      ${this.terminalCols}×${this.terminalRows}
-                    </span>
-                  `
-                : ''}
             </div>
+            ${this.terminalCols > 0 && this.terminalRows > 0
+              ? html`
+                  <span class="text-dark-text-muted">
+                    ${this.terminalCols}×${this.terminalRows}
+                  </span>
+                `
+              : ''}
           </div>
         </div>
 
@@ -929,9 +914,9 @@ export class SessionView extends LitElement {
                 <div
                   class="absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-10"
                 >
-                  <div class="text-vs-text font-mono text-center">
-                    <div class="text-2xl mb-2">${this.getLoadingText()}</div>
-                    <div class="text-sm text-vs-muted">Connecting to session...</div>
+                  <div class="text-dark-text font-mono text-center">
+                    <div class="text-2xl mb-2 text-accent-green">${this.getLoadingText()}</div>
+                    <div class="text-sm text-dark-text-muted">Connecting to session...</div>
                   </div>
                 </div>
               `

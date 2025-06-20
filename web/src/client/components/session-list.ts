@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import './session-create-form.js';
 import './session-card.js';
+import './terminal-icon.js';
 
 export interface Session {
   id: string;
@@ -99,15 +100,37 @@ export class SessionList extends LitElement {
       : this.sessions;
 
     return html`
-      <div class="font-mono text-sm p-4" style="background: black;">
+      <div class="font-mono text-sm p-6 min-h-screen bg-dark-bg">
         ${filteredSessions.length === 0
           ? html`
-              <div class="text-vs-muted text-center py-8">
-                ${this.loading
-                  ? 'Loading sessions...'
-                  : this.hideExited && this.sessions.length > 0
-                    ? 'No running sessions'
-                    : 'No sessions found'}
+              <div class="flex flex-col items-center justify-center text-center py-24">
+                <terminal-icon size="80" glow></terminal-icon>
+                <h2 class="text-2xl font-bold text-dark-text mt-6 mb-2">No Sessions</h2>
+                <p class="text-dark-text-muted mb-8">
+                  ${this.loading
+                    ? 'Loading sessions...'
+                    : this.hideExited && this.sessions.length > 0
+                      ? 'No running terminal sessions'
+                      : 'Create a new terminal session to get started'}
+                </p>
+                ${!this.loading
+                  ? html`
+                      <button
+                        class="btn-secondary font-mono flex items-center gap-2"
+                        @click=${() => (this.showCreateModal = true)}
+                      >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M12 4v16m8-8H4"
+                          />
+                        </svg>
+                        Create Session
+                      </button>
+                    `
+                  : ''}
               </div>
             `
           : html`

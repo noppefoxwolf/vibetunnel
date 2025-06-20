@@ -27,13 +27,27 @@ export class SessionCard extends LitElement {
   @property({ type: Object }) session!: Session;
   @state() private killing = false;
   @state() private killingFrame = 0;
+  @state() private currentTime = Date.now();
 
   private killingInterval: number | null = null;
+  private uptimeInterval: number | null = null;
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Update time every second for real-time uptime display
+    this.uptimeInterval = window.setInterval(() => {
+      this.currentTime = Date.now();
+      this.requestUpdate();
+    }, 1000);
+  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.killingInterval) {
       clearInterval(this.killingInterval);
+    }
+    if (this.uptimeInterval) {
+      clearInterval(this.uptimeInterval);
     }
   }
 
@@ -148,46 +162,51 @@ export class SessionCard extends LitElement {
     document.body.removeChild(textArea);
   }
 
+  private getSessionUptime(): string {
+    if (!this.session.startedAt) return 'Just started';
+
+    const start = new Date(this.session.startedAt);
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  }
+
   render() {
     return html`
       <div
-        class="bg-vs-bg border border-vs-border rounded shadow cursor-pointer overflow-hidden ${this
+        class="bg-dark-bg-secondary border border-dark-border rounded-lg overflow-hidden transition-all duration-200 cursor-pointer ${this
           .killing
           ? 'opacity-60'
-          : ''}"
+          : ''} hover:border-accent-green-darker hover:shadow-glow-green-sm"
         @click=${this.handleCardClick}
       >
-        <!-- Compact Header -->
-        <div
-          class="flex justify-between items-center px-3 py-2 border-b border-vs-border"
-          style="background: black;"
-        >
-          <div class="text-xs font-mono pr-2 flex-1 min-w-0" style="color: #569cd6;">
-            <div class="truncate" title="${this.session.name || this.session.command}">
-              ${this.session.name || this.session.command}
+        <!-- Session Header -->
+        <div class="flex justify-between items-center px-4 py-3">
+          <div class="flex-1 min-w-0">
+            <div
+              class="text-accent-green font-mono text-base font-medium truncate"
+              title="${this.session.name || this.session.id}"
+            >
+              ${this.session.name || this.session.id}
             </div>
           </div>
           ${this.session.status === 'running'
             ? html`
                 <button
-                  class="font-mono px-2 py-0.5 text-xs disabled:opacity-50 flex-shrink-0 rounded transition-colors"
-                  style="background: black; color: #d4d4d4; border: 1px solid #d19a66;"
+                  class="text-xs font-mono px-3 py-1 rounded border border-dark-border text-dark-text-muted hover:border-status-error hover:text-status-error hover:bg-status-error/10 transition-all"
                   @click=${this.handleKillClick}
                   ?disabled=${this.killing}
-                  @mouseover=${(e: Event) => {
-                    const btn = e.target as HTMLElement;
-                    if (!this.killing) {
-                      btn.style.background = '#d19a66';
-                      btn.style.color = 'black';
-                    }
-                  }}
-                  @mouseout=${(e: Event) => {
-                    const btn = e.target as HTMLElement;
-                    if (!this.killing) {
-                      btn.style.background = 'black';
-                      btn.style.color = '#d4d4d4';
-                    }
-                  }}
                 >
                   ${this.killing ? 'killing...' : 'kill'}
                 </button>
@@ -195,55 +214,87 @@ export class SessionCard extends LitElement {
             : ''}
         </div>
 
-        <!-- Terminal display (main content) -->
-        <div class="session-preview bg-black overflow-hidden" style="aspect-ratio: 640/480;">
-          ${this.killing
-            ? html`
-                <div class="w-full h-full flex items-center justify-center text-vs-warning">
-                  <div class="text-center font-mono">
-                    <div class="text-4xl mb-2">${this.getKillingText()}</div>
-                    <div class="text-sm">Killing session...</div>
+        <!-- Terminal Preview -->
+        <div class="px-4 pb-3">
+          <div
+            class="bg-black rounded overflow-hidden border border-dark-border"
+            style="aspect-ratio: 16/9;"
+          >
+            ${this.killing
+              ? html`
+                  <div class="w-full h-full flex items-center justify-center text-status-warning">
+                    <div class="text-center font-mono">
+                      <div class="text-2xl mb-2">${this.getKillingText()}</div>
+                      <div class="text-xs">Terminating process...</div>
+                    </div>
                   </div>
-                </div>
-              `
-            : html`
-                <vibe-terminal-buffer
-                  .sessionId=${this.session.id}
-                  .fontSize=${10}
-                  .fitHorizontally=${true}
-                  .pollInterval=${1000}
-                  class="w-full h-full"
-                  style="pointer-events: none;"
-                ></vibe-terminal-buffer>
-              `}
+                `
+              : html`
+                  <vibe-terminal-buffer
+                    .sessionId=${this.session.id}
+                    .fontSize=${8}
+                    .fitHorizontally=${true}
+                    .pollInterval=${1000}
+                    class="w-full h-full"
+                    style="pointer-events: none;"
+                  ></vibe-terminal-buffer>
+                `}
+          </div>
         </div>
 
-        <!-- Compact Footer -->
-        <div
-          class="px-3 py-2 text-vs-muted text-xs border-t border-vs-border"
-          style="background: black;"
-        >
-          <div class="flex justify-between items-center min-w-0">
-            <span class="${this.getStatusColor()} text-xs flex items-center gap-1 flex-shrink-0">
+        <!-- Session Stats -->
+        <div class="px-4 pb-4 space-y-2">
+          <!-- Status and Uptime -->
+          <div class="flex items-center justify-between text-xs">
+            <div class="flex items-center gap-2">
               <div class="w-2 h-2 rounded-full ${this.getStatusDotColor()}"></div>
-              ${this.getStatusText()}
-            </span>
-            ${this.session.pid
-              ? html`
-                  <span
-                    class="cursor-pointer hover:text-vs-accent transition-colors text-xs flex-shrink-0 ml-2"
-                    @click=${this.handlePidClick}
-                    title="Click to copy PID"
-                  >
-                    PID: ${this.session.pid} <span class="opacity-50">(click to copy)</span>
-                  </span>
-                `
-              : ''}
-          </div>
-          <div class="text-xs opacity-75 min-w-0 mt-1">
-            <div class="truncate" title="${this.session.workingDir}">
-              ${this.session.workingDir}
+              <span class="${this.getStatusColor()} font-medium"> ${this.getStatusText()} </span>
             </div>
+            <span class="text-dark-text-muted"> ${this.getSessionUptime()} </span>
+          </div>
+
+          <!-- PID Info -->
+          ${this.session.pid
+            ? html`
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-dark-text-muted">PID</span>
+                  <span
+                    class="font-mono text-dark-text cursor-pointer hover:text-accent-green transition-colors"
+                    @click=${this.handlePidClick}
+                    title="Click to copy"
+                  >
+                    ${this.session.pid}
+                  </span>
+                </div>
+              `
+            : ''}
+
+          <!-- Command Info -->
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-dark-text-muted">Command</span>
+            <span class="font-mono text-dark-text truncate ml-2" title="${this.session.command}">
+              ${this.session.command}
+            </span>
+          </div>
+
+          <!-- Terminal Size -->
+          ${this.session.width && this.session.height
+            ? html`
+                <div class="flex items-center justify-between text-xs">
+                  <span class="text-dark-text-muted">Size</span>
+                  <span class="font-mono text-dark-text">
+                    ${this.session.width}×${this.session.height}
+                  </span>
+                </div>
+              `
+            : ''}
+
+          <!-- Working Directory -->
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-dark-text-muted">Directory</span>
+            <span class="font-mono text-dark-text truncate ml-2" title="${this.session.workingDir}">
+              ${this.session.workingDir}
+            </span>
           </div>
         </div>
       </div>
@@ -259,15 +310,15 @@ export class SessionCard extends LitElement {
 
   private getStatusColor(): string {
     if (this.session.waiting) {
-      return 'text-vs-muted';
+      return 'text-dark-text-muted';
     }
-    return this.session.status === 'running' ? 'text-vs-user' : 'text-vs-warning';
+    return this.session.status === 'running' ? 'text-accent-green' : 'text-status-warning';
   }
 
   private getStatusDotColor(): string {
     if (this.session.waiting) {
-      return 'bg-gray-500';
+      return 'bg-dark-text-dim';
     }
-    return this.session.status === 'running' ? 'bg-green-500' : 'bg-orange-500';
+    return this.session.status === 'running' ? 'bg-accent-green' : 'bg-status-warning';
   }
 }

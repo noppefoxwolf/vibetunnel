@@ -231,25 +231,33 @@ export class SessionCreateForm extends LitElement {
     }
 
     return html`
-      <div
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-        style="z-index: 9999;"
-      >
-        <div
-          class="font-mono text-sm w-96 max-w-full mx-4"
-          style="background: black; border: 1px solid #569cd6; border-radius: 4px;"
-        >
-          <div class="p-4" style="border-bottom: 1px solid #444;">
-            <div class="text-vs-user text-sm">Create New Session</div>
+      <div class="modal-backdrop flex items-center justify-center z-50">
+        <div class="modal-content w-96 max-w-full mx-4 font-mono text-sm">
+          <div class="pb-6 border-b border-dark-border">
+            <h2 class="text-accent-green text-lg font-semibold">New Terminal Session</h2>
           </div>
 
-          <div class="p-4">
-            <div class="mb-4">
-              <div class="text-vs-text mb-2">Session Name (optional):</div>
+          <div class="pt-6 space-y-6">
+            <div>
+              <label class="form-label">
+                <svg
+                  class="w-4 h-4 text-accent-green"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                Session Name (Optional)
+              </label>
               <input
                 type="text"
-                class="w-full outline-none font-mono px-4 py-2"
-                style="background: rgba(0, 0, 0, 0.8); color: #d4d4d4; border: 1px solid #444; border-radius: 4px;"
+                class="input-field font-mono"
                 .value=${this.sessionName}
                 @input=${this.handleSessionNameChange}
                 placeholder="My Session"
@@ -257,45 +265,62 @@ export class SessionCreateForm extends LitElement {
               />
             </div>
 
-            <div class="mb-4">
-              <div class="text-vs-text mb-2">Working Directory:</div>
-              <div class="flex gap-4">
+            <div>
+              <label class="form-label">
+                <svg
+                  class="w-4 h-4 text-accent-green"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+                  />
+                </svg>
+                Working Directory
+              </label>
+              <div class="flex gap-3">
                 <input
                   type="text"
-                  class="flex-1 outline-none font-mono px-4 py-2"
-                  style="background: rgba(0, 0, 0, 0.8); color: #d4d4d4; border: 1px solid #444; border-radius: 4px;"
+                  class="input-field font-mono flex-1"
                   .value=${this.workingDir}
                   @input=${this.handleWorkingDirChange}
-                  placeholder="~/"
+                  placeholder="/Users/user/projects"
                   ?disabled=${this.disabled || this.isCreating}
                 />
                 <button
-                  class="font-mono px-4 py-2 transition-colors"
-                  style="background: black; color: #d4d4d4; border: 1px solid #569cd6; border-radius: 4px;"
+                  class="btn-secondary font-mono !px-4"
                   @click=${this.handleBrowse}
                   ?disabled=${this.disabled || this.isCreating}
-                  @mouseover=${(e: Event) => {
-                    const btn = e.target as HTMLElement;
-                    btn.style.background = '#569cd6';
-                    btn.style.color = 'black';
-                  }}
-                  @mouseout=${(e: Event) => {
-                    const btn = e.target as HTMLElement;
-                    btn.style.background = 'black';
-                    btn.style.color = '#d4d4d4';
-                  }}
                 >
-                  browse
+                  Browse
                 </button>
               </div>
             </div>
 
-            <div class="mb-4">
-              <div class="text-vs-text mb-2">Command:</div>
+            <div>
+              <label class="form-label">
+                <svg
+                  class="w-4 h-4 text-accent-green"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+                Command
+              </label>
               <input
                 type="text"
-                class="w-full outline-none font-mono px-4 py-2"
-                style="background: rgba(0, 0, 0, 0.8); color: #d4d4d4; border: 1px solid #444; border-radius: 4px;"
+                class="input-field font-mono"
                 .value=${this.command}
                 @input=${this.handleCommandChange}
                 @keydown=${(e: KeyboardEvent) => e.key === 'Enter' && this.handleCreate()}
@@ -304,49 +329,110 @@ export class SessionCreateForm extends LitElement {
               />
             </div>
 
-            <div class="flex gap-4 justify-end">
+            <div class="mb-6">
+              <label class="form-label text-dark-text-dim">QUICK START</label>
+              <div class="grid grid-cols-2 gap-3">
+                <button
+                  class="quick-start-btn font-mono flex items-center gap-2 ${this.command === 'zsh'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => {
+                    this.command = 'zsh';
+                    this.requestUpdate();
+                  }}
+                  ?disabled=${this.disabled || this.isCreating}
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  zsh
+                </button>
+                <button
+                  class="quick-start-btn font-mono flex items-center gap-2 ${this.command === 'bash'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => {
+                    this.command = 'bash';
+                    this.requestUpdate();
+                  }}
+                  ?disabled=${this.disabled || this.isCreating}
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                  </svg>
+                  bash
+                </button>
+                <button
+                  class="quick-start-btn font-mono flex items-center gap-2 ${this.command ===
+                  'claude'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => {
+                    this.command = 'claude';
+                    this.requestUpdate();
+                  }}
+                  ?disabled=${this.disabled || this.isCreating}
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                    />
+                  </svg>
+                  claude
+                </button>
+                <button
+                  class="quick-start-btn font-mono flex items-center gap-2 ${this.command === 'node'
+                    ? 'active'
+                    : ''}"
+                  @click=${() => {
+                    this.command = 'node';
+                    this.requestUpdate();
+                  }}
+                  ?disabled=${this.disabled || this.isCreating}
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"
+                    />
+                  </svg>
+                  node
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 pt-6 border-t border-dark-border">
               <button
-                class="font-mono px-4 py-2 transition-colors"
-                style="background: black; color: #d4d4d4; border: 1px solid #888; border-radius: 4px;"
+                class="btn-ghost font-mono h-12"
                 @click=${this.handleCancel}
                 ?disabled=${this.isCreating}
-                @mouseover=${(e: Event) => {
-                  const btn = e.target as HTMLElement;
-                  btn.style.background = '#888';
-                  btn.style.color = 'black';
-                }}
-                @mouseout=${(e: Event) => {
-                  const btn = e.target as HTMLElement;
-                  btn.style.background = 'black';
-                  btn.style.color = '#d4d4d4';
-                }}
               >
-                cancel
+                Cancel
               </button>
               <button
-                class="font-mono px-4 py-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                style="background: black; color: #d4d4d4; border: 1px solid #569cd6; border-radius: 4px;"
+                class="btn-primary font-mono h-12 disabled:opacity-50 disabled:cursor-not-allowed"
                 @click=${this.handleCreate}
                 ?disabled=${this.disabled ||
                 this.isCreating ||
                 !this.workingDir.trim() ||
                 !this.command.trim()}
-                @mouseover=${(e: Event) => {
-                  const btn = e.target as HTMLElement;
-                  if (!btn.hasAttribute('disabled')) {
-                    btn.style.background = '#569cd6';
-                    btn.style.color = 'black';
-                  }
-                }}
-                @mouseout=${(e: Event) => {
-                  const btn = e.target as HTMLElement;
-                  if (!btn.hasAttribute('disabled')) {
-                    btn.style.background = 'black';
-                    btn.style.color = '#d4d4d4';
-                  }
-                }}
               >
-                ${this.isCreating ? 'creating...' : 'create'}
+                ${this.isCreating ? 'Creating...' : 'Create'}
               </button>
             </div>
           </div>

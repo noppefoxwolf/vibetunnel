@@ -146,50 +146,39 @@ export class FileBrowser extends LitElement {
 
     return html`
       <div
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center"
-        style="z-index: 9999;"
+        class="modal-backdrop flex items-center justify-center z-50 animate-fade-in"
       >
         <div
-          class="font-mono text-sm w-96 h-96 flex flex-col"
-          style="background: black; border: 1px solid #569cd6; border-radius: 4px;"
+          class="modal-content w-96 max-w-full mx-4 h-96 flex flex-col font-mono text-sm animate-scale-in"
         >
-          <div class="p-4 flex-shrink-0" style="border-bottom: 1px solid #444;">
+          <div class="pb-4 border-b border-dark-border flex-shrink-0">
             <div class="flex justify-between items-center mb-2">
-              <div class="text-vs-user text-sm">Select Directory</div>
+              <h3 class="text-accent-green text-lg font-semibold">Select Directory</h3>
               <button
-                class="font-mono px-2 py-1 text-xs rounded transition-colors"
-                style="background: black; color: #d4d4d4; border: 1px solid #569cd6; border-radius: 4px;"
+                class="btn-ghost text-xs !px-3 !py-1"
                 @click=${this.handleCreateFolder}
                 ?disabled=${this.loading}
                 title="Create new folder"
-                @mouseover=${(e: Event) => {
-                  const btn = e.target as HTMLElement;
-                  btn.style.background = '#569cd6';
-                  btn.style.color = 'black';
-                }}
-                @mouseout=${(e: Event) => {
-                  const btn = e.target as HTMLElement;
-                  btn.style.background = 'black';
-                  btn.style.color = '#d4d4d4';
-                }}
               >
                 + folder
               </button>
             </div>
-            <div class="text-vs-muted text-sm break-all">${this.currentPath}</div>
+            <div class="text-dark-text-muted text-xs break-all">${this.currentPath}</div>
           </div>
 
-          <div class="p-4 flex-1 overflow-y-auto">
+          <div class="py-4 flex-1 overflow-y-auto">
             ${this.loading
-              ? html` <div class="text-vs-muted">Loading...</div> `
+              ? html` <div class="text-dark-text-muted text-center py-8">Loading...</div> `
               : html`
                   ${this.currentPath !== '/'
                     ? html`
                         <div
-                          class="flex items-center gap-2 p-2 hover:bg-vs-nav-hover cursor-pointer text-vs-accent"
+                          class="flex items-center gap-3 px-4 py-2 hover:bg-dark-bg-secondary cursor-pointer text-accent-green transition-all duration-200"
                           @click=${this.handleParentClick}
                         >
-                          <span>📁</span>
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                          </svg>
                           <span>.. (parent directory)</span>
                         </div>
                       `
@@ -199,10 +188,12 @@ export class FileBrowser extends LitElement {
                     .map(
                       (file) => html`
                         <div
-                          class="flex items-center gap-2 p-2 hover:bg-vs-nav-hover cursor-pointer text-vs-accent"
+                          class="flex items-center gap-3 px-4 py-2 hover:bg-dark-bg-secondary cursor-pointer text-dark-text transition-all duration-200"
                           @click=${() => this.handleDirectoryClick(file.name)}
                         >
-                          <span>📁</span>
+                          <svg class="w-4 h-4 text-accent-green" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                          </svg>
                           <span>${file.name}</span>
                         </div>
                       `
@@ -211,8 +202,10 @@ export class FileBrowser extends LitElement {
                     .filter((f) => !f.isDir)
                     .map(
                       (file) => html`
-                        <div class="flex items-center gap-2 p-2 text-vs-muted">
-                          <span>📄</span>
+                        <div class="flex items-center gap-3 px-4 py-2 text-dark-text-dim">
+                          <svg class="w-4 h-4 text-dark-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
                           <span>${file.name}</span>
                         </div>
                       `
@@ -223,13 +216,12 @@ export class FileBrowser extends LitElement {
           <!-- Create folder dialog -->
           ${this.showCreateFolder
             ? html`
-                <div class="p-4 border-t border-vs-border flex-shrink-0">
-                  <div class="text-vs-assistant text-sm mb-2">Create New Folder</div>
-                  <div class="flex gap-2">
+                <div class="p-4 border-t border-dark-border flex-shrink-0 animate-slide-up">
+                  <div class="text-accent-green text-sm mb-3">Create New Folder</div>
+                  <div class="flex gap-3">
                     <input
                       type="text"
-                      class="flex-1 outline-none font-mono px-2 py-1 text-sm"
-                      style="background: rgba(0, 0, 0, 0.8); color: #d4d4d4; border: 1px solid #444; border-radius: 4px;"
+                      class="input-field font-mono text-sm flex-1"
                       placeholder="Folder name"
                       .value=${this.newFolderName}
                       @input=${this.handleFolderNameInput}
@@ -237,46 +229,16 @@ export class FileBrowser extends LitElement {
                       ?disabled=${this.creating}
                     />
                     <button
-                      class="font-mono px-2 py-1 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      style="background: black; color: #d4d4d4; border: 1px solid #569cd6; border-radius: 4px;"
+                      class="btn-secondary text-xs !px-3 disabled:opacity-50 disabled:cursor-not-allowed"
                       @click=${this.createFolder}
                       ?disabled=${this.creating || !this.newFolderName.trim()}
-                      @mouseover=${(e: Event) => {
-                        const btn = e.target as HTMLElement;
-                        if (!btn.hasAttribute('disabled')) {
-                          btn.style.background = '#569cd6';
-                          btn.style.color = 'black';
-                        }
-                      }}
-                      @mouseout=${(e: Event) => {
-                        const btn = e.target as HTMLElement;
-                        if (!btn.hasAttribute('disabled')) {
-                          btn.style.background = 'black';
-                          btn.style.color = '#d4d4d4';
-                        }
-                      }}
                     >
                       ${this.creating ? '...' : 'create'}
                     </button>
                     <button
-                      class="font-mono px-2 py-1 text-xs transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      style="background: black; color: #d4d4d4; border: 1px solid #888; border-radius: 4px;"
+                      class="btn-ghost text-xs !px-3 disabled:opacity-50 disabled:cursor-not-allowed"
                       @click=${this.handleCancelCreateFolder}
                       ?disabled=${this.creating}
-                      @mouseover=${(e: Event) => {
-                        const btn = e.target as HTMLElement;
-                        if (!btn.hasAttribute('disabled')) {
-                          btn.style.background = '#888';
-                          btn.style.color = 'black';
-                        }
-                      }}
-                      @mouseout=${(e: Event) => {
-                        const btn = e.target as HTMLElement;
-                        if (!btn.hasAttribute('disabled')) {
-                          btn.style.background = 'black';
-                          btn.style.color = '#d4d4d4';
-                        }
-                      }}
                     >
                       cancel
                     </button>
@@ -285,40 +247,18 @@ export class FileBrowser extends LitElement {
               `
             : ''}
 
-          <div class="p-4 border-t border-vs-border flex gap-4 justify-end flex-shrink-0">
+          <div class="pt-4 border-t border-dark-border grid grid-cols-2 gap-3 flex-shrink-0">
             <button
-              class="font-mono px-4 py-2 transition-colors"
-              style="background: black; color: #d4d4d4; border: 1px solid #888; border-radius: 4px;"
+              class="btn-ghost font-mono h-12"
               @click=${this.handleCancel}
-              @mouseover=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                btn.style.background = '#888';
-                btn.style.color = 'black';
-              }}
-              @mouseout=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                btn.style.background = 'black';
-                btn.style.color = '#d4d4d4';
-              }}
             >
-              cancel
+              Cancel
             </button>
             <button
-              class="font-mono px-4 py-2 transition-colors"
-              style="background: black; color: #d4d4d4; border: 1px solid #569cd6; border-radius: 4px;"
+              class="btn-primary font-mono h-12"
               @click=${this.handleSelect}
-              @mouseover=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                btn.style.background = '#569cd6';
-                btn.style.color = 'black';
-              }}
-              @mouseout=${(e: Event) => {
-                const btn = e.target as HTMLElement;
-                btn.style.background = 'black';
-                btn.style.color = '#d4d4d4';
-              }}
             >
-              select
+              Select
             </button>
           </div>
         </div>
