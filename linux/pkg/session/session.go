@@ -14,6 +14,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// GenerateID generates a new unique session ID
+func GenerateID() string {
+	return uuid.New().String()
+}
+
 type Status string
 
 const (
@@ -54,14 +59,22 @@ type Session struct {
 	pty         *PTY
 	stdinPipe   *os.File
 	stdinMutex  sync.Mutex
+	mu          sync.RWMutex
 }
 
 func newSession(controlPath string, config Config) (*Session, error) {
 	id := uuid.New().String()
+	return newSessionWithID(controlPath, id, config)
+}
+
+func newSessionWithID(controlPath string, id string, config Config) (*Session, error) {
 	sessionPath := filepath.Join(controlPath, id)
 
-	log.Printf("[DEBUG] Creating new session %s with config: Name=%s, Cmdline=%v, Cwd=%s", 
-		id[:8], config.Name, config.Cmdline, config.Cwd)
+	// Only log in debug mode
+	if os.Getenv("VIBETUNNEL_DEBUG") != "" {
+		log.Printf("[DEBUG] Creating new session %s with config: Name=%s, Cmdline=%v, Cwd=%s",
+			id[:8], config.Name, config.Cmdline, config.Cwd)
+	}
 
 	if err := os.MkdirAll(sessionPath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create session directory: %w", err)
@@ -78,7 +91,9 @@ func newSession(controlPath string, config Config) (*Session, error) {
 			shell = "/bin/bash"
 		}
 		config.Cmdline = []string{shell}
-		log.Printf("[DEBUG] Session %s: Set default command to %v", id[:8], config.Cmdline)
+		if os.Getenv("VIBETUNNEL_DEBUG") != "" {
+			log.Printf("[DEBUG] Session %s: Set default command to %v", id[:8], config.Cmdline)
+		}
 	}
 
 	// Set default working directory if empty
@@ -92,7 +107,9 @@ func newSession(controlPath string, config Config) (*Session, error) {
 		} else {
 			config.Cwd = cwd
 		}
-		log.Printf("[DEBUG] Session %s: Set default working directory to %s", id[:8], config.Cwd)
+		if os.Getenv("VIBETUNNEL_DEBUG") != "" {
+			log.Printf("[DEBUG] Session %s: Set default working directory to %s", id[:8], config.Cwd)
+		}
 	}
 
 	term := os.Getenv("TERM")
@@ -150,7 +167,7 @@ func loadSession(controlPath, id string) (*Session, error) {
 
 	// If session is running, we need to reconnect to the PTY for operations like resize
 	// For now, we'll handle this by checking if we need PTY access in individual methods
-	
+
 	return session, nil
 }
 
@@ -187,15 +204,24 @@ func (s *Session) Start() error {
 
 	go func() {
 		if err := s.pty.Run(); err != nil {
-			log.Printf("[DEBUG] Session %s: PTY.Run() exited with error: %v", s.ID[:8], err)
+			if os.Getenv("VIBETUNNEL_DEBUG") != "" {
+				log.Printf("[DEBUG] Session %s: PTY.Run() exited with error: %v", s.ID[:8], err)
+			}
 		} else {
-			log.Printf("[DEBUG] Session %s: PTY.Run() exited normally", s.ID[:8])
+			if os.Getenv("VIBETUNNEL_DEBUG") != "" {
+				log.Printf("[DEBUG] Session %s: PTY.Run() exited normally", s.ID[:8])
+			}
 		}
 	}()
-	
+
+	// Start control listener
+	s.startControlListener()
+
 	// Process status will be checked on first access - no artificial delay needed
-	log.Printf("[DEBUG] Session %s: Started successfully", s.ID[:8])
-	
+	if os.Getenv("VIBETUNNEL_DEBUG") != "" {
+		log.Printf("[DEBUG] Session %s: Started successfully", s.ID[:8])
+	}
+
 	return nil
 }
 
@@ -243,6 +269,16 @@ func (s *Session) Signal(sig string) error {
 		return fmt.Errorf("no process to signal")
 	}
 
+	// Check if process is still alive before signaling
+	if !s.IsAlive() {
+		// Process is already dead, update status and return success
+		s.info.Status = string(StatusExited)
+		exitCode := 0
+		s.info.ExitCode = &exitCode
+		s.info.Save(s.Path())
+		return nil
+	}
+
 	proc, err := os.FindProcess(s.info.Pid)
 	if err != nil {
 		return err
@@ -252,7 +288,12 @@ func (s *Session) Signal(sig string) error {
 	case "SIGTERM":
 		return proc.Signal(os.Interrupt)
 	case "SIGKILL":
-		return proc.Kill()
+		err = proc.Kill()
+		// If kill fails with "process already finished", that's okay
+		if err != nil && strings.Contains(err.Error(), "process already finished") {
+			return nil
+		}
+		return err
 	default:
 		return fmt.Errorf("unsupported signal: %s", sig)
 	}
@@ -263,15 +304,30 @@ func (s *Session) Stop() error {
 }
 
 func (s *Session) Kill() error {
+	// First check if the session is already dead
+	if s.info.Status == string(StatusExited) {
+		// Already exited, just cleanup and return success
+		s.cleanup()
+		return nil
+	}
+
+	// Try to kill the process
 	err := s.Signal("SIGKILL")
 	s.cleanup()
+	
+	// If the error is because the process doesn't exist, that's fine
+	if err != nil && (strings.Contains(err.Error(), "no such process") || 
+		strings.Contains(err.Error(), "process already finished")) {
+		return nil
+	}
+	
 	return err
 }
 
 func (s *Session) cleanup() {
 	s.stdinMutex.Lock()
 	defer s.stdinMutex.Unlock()
-	
+
 	if s.stdinPipe != nil {
 		s.stdinPipe.Close()
 		s.stdinPipe = nil
@@ -296,7 +352,7 @@ func (s *Session) Resize(width, height int) error {
 	// Update session info
 	s.info.Width = width
 	s.info.Height = height
-	
+
 	// Save updated session info
 	if err := s.info.Save(s.Path()); err != nil {
 		log.Printf("[ERROR] Failed to save session info after resize: %v", err)
@@ -311,6 +367,11 @@ func (s *Session) IsAlive() bool {
 		return false
 	}
 
+	// Check if process exists and is not a zombie
+	if isZombie(s.info.Pid) {
+		return false
+	}
+
 	proc, err := os.FindProcess(s.info.Pid)
 	if err != nil {
 		return false
@@ -318,6 +379,36 @@ func (s *Session) IsAlive() bool {
 
 	err = proc.Signal(syscall.Signal(0))
 	return err == nil
+}
+
+// isZombie checks if a process is in zombie state
+func isZombie(pid int) bool {
+	// Read process status from /proc/[pid]/stat
+	statPath := fmt.Sprintf("/proc/%d/stat", pid)
+	data, err := os.ReadFile(statPath)
+	if err != nil {
+		// If we can't read the stat file, process doesn't exist
+		return true
+	}
+
+	// The process state is the third field after the command name in parentheses
+	// Find the last ')' to handle processes with ')' in their names
+	statStr := string(data)
+	lastParen := strings.LastIndex(statStr, ")")
+	if lastParen == -1 {
+		return true
+	}
+
+	// Parse fields after the command name
+	fields := strings.Fields(statStr[lastParen+1:])
+	if len(fields) < 1 {
+		return true
+	}
+
+	// State is the first field after the command
+	// Z = zombie
+	state := fields[0]
+	return state == "Z"
 }
 
 func (s *Session) UpdateStatus() error {
@@ -335,6 +426,13 @@ func (s *Session) UpdateStatus() error {
 	return nil
 }
 
+// GetInfo returns the session info
+func (s *Session) GetInfo() *Info {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.info
+}
+
 func (i *Info) Save(sessionPath string) error {
 	data, err := json.MarshalIndent(i, "", "  ")
 	if err != nil {
@@ -344,15 +442,82 @@ func (i *Info) Save(sessionPath string) error {
 	return os.WriteFile(filepath.Join(sessionPath, "session.json"), data, 0644)
 }
 
+// RustSessionInfo represents the session format used by the Rust server
+type RustSessionInfo struct {
+	ID        string            `json:"id,omitempty"`
+	Name      string            `json:"name"`
+	Cmdline   []string          `json:"cmdline"`
+	Cwd       string            `json:"cwd"`
+	Pid       *int              `json:"pid,omitempty"`
+	Status    string            `json:"status"`
+	ExitCode  *int              `json:"exit_code,omitempty"`
+	StartedAt *time.Time        `json:"started_at,omitempty"`
+	Term      string            `json:"term"`
+	SpawnType string            `json:"spawn_type,omitempty"`
+	Cols      *int              `json:"cols,omitempty"`
+	Rows      *int              `json:"rows,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+}
+
 func LoadInfo(sessionPath string) (*Info, error) {
 	data, err := os.ReadFile(filepath.Join(sessionPath, "session.json"))
 	if err != nil {
 		return nil, err
 	}
 
+	// First try to unmarshal as Go format
 	var info Info
-	if err := json.Unmarshal(data, &info); err != nil {
-		return nil, err
+	if err := json.Unmarshal(data, &info); err == nil {
+		// Successfully parsed as Go format
+		return &info, nil
+	}
+
+	// If that fails, try Rust format
+	var rustInfo RustSessionInfo
+	if err := json.Unmarshal(data, &rustInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse session.json: %w", err)
+	}
+
+	// Convert Rust format to Go format
+	info = Info{
+		ID:        rustInfo.ID,
+		Name:      rustInfo.Name,
+		Cmdline:   strings.Join(rustInfo.Cmdline, " "),
+		Cwd:       rustInfo.Cwd,
+		Status:    rustInfo.Status,
+		ExitCode:  rustInfo.ExitCode,
+		Term:      rustInfo.Term,
+		Args:      rustInfo.Cmdline,
+		Env:       rustInfo.Env,
+	}
+
+	// Handle PID conversion
+	if rustInfo.Pid != nil {
+		info.Pid = *rustInfo.Pid
+	}
+
+	// Handle dimensions: use cols/rows if available, otherwise defaults
+	if rustInfo.Cols != nil {
+		info.Width = *rustInfo.Cols
+	} else {
+		info.Width = 120
+	}
+	if rustInfo.Rows != nil {
+		info.Height = *rustInfo.Rows
+	} else {
+		info.Height = 30
+	}
+
+	// Handle timestamp
+	if rustInfo.StartedAt != nil {
+		info.StartedAt = *rustInfo.StartedAt
+	} else {
+		info.StartedAt = time.Now()
+	}
+
+	// If ID is empty (Rust doesn't store it in JSON), derive it from directory name
+	if info.ID == "" {
+		info.ID = filepath.Base(sessionPath)
 	}
 
 	return &info, nil

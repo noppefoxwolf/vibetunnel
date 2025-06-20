@@ -19,7 +19,7 @@ struct DebugSettingsView: View {
     @State private var heartbeatTask: Task<Void, Never>?
     @State private var showPurgeConfirmation = false
 
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "DebugSettings")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "DebugSettings")
 
     private var isServerRunning: Bool {
         serverMonitor.isRunning
@@ -304,8 +304,8 @@ private struct ServerSection: View {
                                 .fill(isServerHealthy ? .green : (isServerRunning ? .orange : .red))
                                 .frame(width: 8, height: 8)
                             if isServerRunning && !isServerHealthy {
-                                ProgressView()
-                                    .scaleEffect(0.6)
+                                TextShimmer(text: "...", font: .caption)
+                                    .frame(width: 20, height: 8)
                             }
                         }
                         Text(isServerHealthy ? "Server is running on port \(serverPort)" :
@@ -317,8 +317,8 @@ private struct ServerSection: View {
 
                     Spacer()
 
-                    // Show restart button for Rust mode always
-                    if serverModeString == ServerMode.rust.rawValue {
+                    // Show restart button for all modes except Swift/Hummingbird
+                    if serverModeString != ServerMode.hummingbird.rawValue {
                         Button("Restart") {
                             Task {
                                 await serverManager.manualRestart()
@@ -340,7 +340,7 @@ private struct ServerSection: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Server Mode")
-                        Text("Choose between the built-in Swift Hummingbird server or the Rust binary")
+                        Text("Multiple server implementations cause reasons™.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -369,12 +369,10 @@ private struct ServerSection: View {
                     .disabled(serverManager.isSwitching)
                 }
 
-                if serverManager.isSwitching {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                        Text("Switching server mode...")
-                            .font(.caption)
+                // Server mode switching status with consistent height
+                HStack {
+                    if serverManager.isSwitching {
+                        TextShimmer(text: "Switching server mode...", font: .caption)
                             .foregroundStyle(.secondary)
                     }
                 }

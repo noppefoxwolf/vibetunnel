@@ -1,9 +1,7 @@
-import { LitElement, html, PropertyValues } from 'lit';
+import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { apiService } from '../services/api-service.js';
-import './terminal.js';
-import type { Terminal } from './terminal.js';
-import { CastConverter } from '../utils/cast-converter.js';
+import './vibe-terminal-buffer.js';
 
 export interface Session {
   id: string;
@@ -28,322 +26,174 @@ export class SessionCard extends LitElement {
   }
 
   @property({ type: Object }) session!: Session;
-  @state() private terminal: Terminal | null = null;
   @state() private killing = false;
   @state() private killingFrame = 0;
+  @state() private hasEscPrompt = false;
 
   private killingInterval: number | null = null;
-
-  firstUpdated(changedProperties: PropertyValues) {
-    super.firstUpdated(changedProperties);
-    this.setupTerminal();
-  }
-
-  updated(changedProperties: PropertyValues) {
-    super.updated(changedProperties);
-
-    // Initialize terminal after first render when terminal element exists
-    if (!this.terminal && !this.killing) {
-      const terminalElement = this.querySelector('vibe-terminal') as Terminal;
-      if (terminalElement) {
-        this.initializeTerminal();
-      }
-    }
-  }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     if (this.killingInterval) {
       clearInterval(this.killingInterval);
     }
-    // Terminal cleanup is handled by the component itself
-    this.terminal = null;
   }
 
-  private setupTerminal() {
-    // Terminal element will be created in render()
-    // We'll initialize it in updated() after first render
-  }
+  private startKillingAnimation() {
+    if (!this.killing) {
+      this.killing = true;
+      this.killingFrame = 0;
 
-  private async initializeTerminal() {
-    const terminalElement = this.querySelector('vibe-terminal') as Terminal;
-    if (!terminalElement) return;
-
-    this.terminal = terminalElement;
-
-    // Configure terminal for card display
-    this.terminal.cols = 80;
-    this.terminal.rows = 24;
-    this.terminal.fontSize = 10; // Smaller font for card display
-    this.terminal.fitHorizontally = true; // Fit to card width
-
-    // Load snapshot data
-    const url = `/api/sessions/${this.session.id}/snapshot`;
-
-    // Wait a moment for freshly created sessions before connecting
-    const sessionAge = Date.now() - new Date(this.session.startedAt).getTime();
-    const delay = sessionAge < 5000 ? 2000 : 0; // 2 second delay if session is less than 5 seconds old
-
-    setTimeout(async () => {
-      await this.loadSnapshot(url);
-    }, delay);
-  }
-
-  private async loadSnapshot(url: string) {
-    if (!this.terminal) return;
-
-    try {
-      const response = await apiService.fetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch snapshot: ${response.status}`);
-
-      const castContent = await response.text();
-
-      // Clear terminal first
-      this.terminal.clear();
-
-      // Use the new super-fast dump method that handles everything in one operation
-      await CastConverter.dumpToTerminal(this.terminal, castContent);
-
-      // Scroll to bottom after loading
-      this.terminal.queueCallback(() => {
-        if (this.terminal) {
-          this.terminal.scrollToBottom();
-        }
-      });
-    } catch (error) {
-      console.error('Failed to load session snapshot:', error);
-    }
-  }
-
-  private handleCardClick() {
-    this.dispatchEvent(
-      new CustomEvent('session-select', {
-        detail: this.session,
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  private async handleKillClick(e: Event) {
-    e.stopPropagation();
-    e.preventDefault();
-
-    // Start killing animation
-    this.killing = true;
-    this.killingFrame = 0;
-    this.killingInterval = window.setInterval(() => {
-      this.killingFrame = (this.killingFrame + 1) % 4;
-      this.requestUpdate();
-    }, 200);
-
-    // Send kill request
-    try {
-      await apiService.delete(`/api/sessions/${this.session.id}`);
-
-      // Kill succeeded - dispatch event to notify parent components
-      this.dispatchEvent(
-        new CustomEvent('session-killed', {
-          detail: {
-            sessionId: this.session.id,
-            session: this.session,
-          },
-          bubbles: true,
-          composed: true,
-        })
-      );
-
-      console.log(`Session ${this.session.id} killed successfully`);
-    } catch (error) {
-      console.error('Error killing session:', error);
-
-      // Show error to user (keep animation to indicate something went wrong)
-      this.dispatchEvent(
-        new CustomEvent('session-kill-error', {
-          detail: {
-            sessionId: this.session.id,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    } finally {
-      // Stop animation in all cases
-      this.stopKillingAnimation();
+      this.killingInterval = window.setInterval(() => {
+        this.killingFrame = (this.killingFrame + 1) % 8;
+        this.requestUpdate();
+      }, 100);
     }
   }
 
   private stopKillingAnimation() {
     this.killing = false;
+    this.killingFrame = 0;
     if (this.killingInterval) {
       clearInterval(this.killingInterval);
       this.killingInterval = null;
     }
   }
 
-  private getKillingText(): string {
-    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    return frames[this.killingFrame % frames.length];
+  private renderKillingAnimation() {
+    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧'];
+    return html`<span class="text-vs-warning">${frames[this.killingFrame]}</span>`;
   }
 
-  private async handlePidClick(e: Event) {
-    e.stopPropagation();
-    e.preventDefault();
+  private async handleKill() {
+    if (this.killing) return;
 
-    if (this.session.pid) {
-      try {
-        await navigator.clipboard.writeText(this.session.pid.toString());
-        console.log('PID copied to clipboard:', this.session.pid);
-      } catch (error) {
-        console.error('Failed to copy PID to clipboard:', error);
-        // Fallback: select text manually
-        this.fallbackCopyToClipboard(this.session.pid.toString());
-      }
-    }
-  }
+    this.startKillingAnimation();
 
-  private fallbackCopyToClipboard(text: string) {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    document.body.appendChild(textArea);
-    textArea.focus();
-    textArea.select();
     try {
-      document.execCommand('copy');
-      console.log('PID copied to clipboard (fallback):', text);
+      await apiService.postJSON(`/api/sessions/${this.session.id}/kill`, {});
+
+      // Dispatch event to parent
+      this.dispatchEvent(
+        new CustomEvent('session-killed', {
+          detail: this.session.id,
+          bubbles: true,
+          composed: true,
+        })
+      );
     } catch (error) {
-      console.error('Fallback copy failed:', error);
+      console.error('Error killing session:', error);
+    } finally {
+      this.stopKillingAnimation();
     }
-    document.body.removeChild(textArea);
   }
 
-  render() {
+  private renderPid() {
+    if (!this.session.pid) return html``;
+
     return html`
-      <div
-        class="bg-vs-bg border border-vs-border rounded shadow cursor-pointer overflow-hidden transform transition-all duration-200 hover:scale-105 hover:shadow-lg ${this
-          .killing
-          ? 'opacity-60'
-          : ''}"
-        @click=${this.handleCardClick}
-      >
-        <!-- Compact Header -->
-        <div
-          class="flex justify-between items-center px-3 py-2 border-b border-vs-border"
-          style="background: black;"
-        >
-          <div class="text-xs font-mono pr-2 flex-1 min-w-0" style="color: #569cd6;">
-            <div class="truncate" title="${this.session.name || this.session.command}">
-              ${this.session.name || this.session.command}
-            </div>
-          </div>
-          ${this.session.status === 'running'
-            ? html`
-                <button
-                  class="font-mono px-2 py-0.5 text-xs disabled:opacity-50 flex-shrink-0 rounded transition-colors"
-                  style="background: black; color: #d4d4d4; border: 1px solid #d19a66;"
-                  @click=${this.handleKillClick}
-                  ?disabled=${this.killing}
-                  @mouseover=${(e: Event) => {
-                    const btn = e.target as HTMLElement;
-                    if (!this.killing) {
-                      btn.style.background = '#d19a66';
-                      btn.style.color = 'black';
-                    }
-                  }}
-                  @mouseout=${(e: Event) => {
-                    const btn = e.target as HTMLElement;
-                    if (!this.killing) {
-                      btn.style.background = 'black';
-                      btn.style.color = '#d4d4d4';
-                    }
-                  }}
-                >
-                  ${this.killing ? 'killing...' : 'kill'}
-                </button>
-              `
-            : ''}
-        </div>
-
-        <!-- Terminal display (main content) -->
-        <div class="session-preview bg-black overflow-hidden" style="aspect-ratio: 640/480;">
-          ${this.killing
-            ? html`
-                <div class="w-full h-full flex items-center justify-center text-vs-warning">
-                  <div class="text-center font-mono">
-                    <div class="text-4xl mb-2">${this.getKillingText()}</div>
-                    <div class="text-sm">Killing session...</div>
-                  </div>
-                </div>
-              `
-            : html`
-                <vibe-terminal
-                  .sessionId=${this.session.id}
-                  .cols=${80}
-                  .rows=${24}
-                  .fontSize=${10}
-                  .fitHorizontally=${true}
-                  class="w-full h-full"
-                  style="pointer-events: none;"
-                ></vibe-terminal>
-              `}
-        </div>
-
-        <!-- Compact Footer -->
-        <div
-          class="px-3 py-2 text-vs-muted text-xs border-t border-vs-border"
-          style="background: black;"
-        >
-          <div class="flex justify-between items-center min-w-0">
-            <span class="${this.getStatusColor()} text-xs flex items-center gap-1 flex-shrink-0">
-              <div
-                class="w-2 h-2 rounded-full ${this.getStatusDotColor()} ${this.session.status ===
-                'running'
-                  ? 'animate-pulse'
-                  : ''}"
-              ></div>
-              ${this.getStatusText()}
-            </span>
-            ${this.session.pid
-              ? html`
-                  <span
-                    class="cursor-pointer hover:text-vs-accent transition-colors text-xs flex-shrink-0 ml-2"
-                    @click=${this.handlePidClick}
-                    title="Click to copy PID"
-                  >
-                    PID: ${this.session.pid} <span class="opacity-50">(click to copy)</span>
-                  </span>
-                `
-              : ''}
-          </div>
-          <div class="text-xs opacity-75 min-w-0 mt-1">
-            <div class="truncate" title="${this.session.workingDir}">
-              ${this.session.workingDir}
-            </div>
-          </div>
-        </div>
-      </div>
+      <div class="font-mono text-xs" style="color: #8c8c8c;">PID: ${this.session.pid}</div>
     `;
   }
 
-  private getStatusText(): string {
-    if (this.session.waiting) {
-      return 'waiting';
+  private handleSessionClick(e: Event) {
+    // Prevent navigation if clicking on the kill button
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) {
+      return;
     }
-    return this.session.status;
+
+    // Navigate to session view
+    const event = new CustomEvent('session-selected', {
+      detail: this.session.id,
+      bubbles: true,
+      composed: true,
+    });
+    this.dispatchEvent(event);
   }
 
-  private getStatusColor(): string {
-    if (this.session.waiting) {
-      return 'text-vs-muted';
-    }
-    return this.session.status === 'running' ? 'text-vs-user' : 'text-vs-warning';
-  }
+  render() {
+    const isWaiting = this.session.waiting === true;
+    const isRunning = this.session.status === 'running';
+    const exitedClass = !isRunning ? 'opacity-60' : '';
+    const borderClass = this.hasEscPrompt ? 'border-2 border-vs-nav-active' : 'border border-vs-border';
 
-  private getStatusDotColor(): string {
-    if (this.session.waiting) {
-      return 'bg-gray-500';
-    }
-    return this.session.status === 'running' ? 'bg-green-500' : 'bg-orange-500';
+    // Format time
+    const startTime = new Date(this.session.startedAt).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    return html`
+      <div
+        class="p-4 rounded ${exitedClass} ${borderClass} cursor-pointer hover:bg-vs-bg-secondary transition-all duration-150"
+        style="background: rgba(0, 0, 0, 0.6);"
+        @click=${this.handleSessionClick}
+      >
+        <div class="flex justify-between items-start mb-2">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              ${this.session.name
+                ? html`<div class="font-mono text-sm text-vs-user">${this.session.name}</div>`
+                : ''}
+              <div
+                class="font-mono text-xs px-2 py-0.5 rounded ${isRunning
+                  ? 'bg-vs-link text-vs-bg'
+                  : 'bg-vs-warning text-vs-bg'}"
+              >
+                ${isRunning ? 'running' : `exited (${this.session.exitCode || 0})`}
+              </div>
+              ${isWaiting
+                ? html`<div class="font-mono text-xs px-2 py-0.5 rounded bg-vs-accent text-vs-bg">
+                    waiting
+                  </div>`
+                : ''}
+            </div>
+            <div class="font-mono text-xs truncate" style="color: #9cdcfe;">
+              ${this.session.command}
+            </div>
+            <div
+              class="font-mono text-xs truncate"
+              style="color: #8c8c8c;"
+              title="${this.session.workingDir}"
+            >
+              ${this.session.workingDir}
+            </div>
+          </div>
+          <div class="flex flex-col items-end gap-1">
+            <div class="font-mono text-xs" style="color: #8c8c8c;">${startTime}</div>
+            ${this.renderPid()}
+            ${isRunning
+              ? html`
+                  <button
+                    class="px-2 py-1 font-mono text-xs rounded ${this.killing
+                      ? 'bg-vs-warning text-vs-bg'
+                      : 'bg-vs-error text-vs-bg hover:bg-red-600'} transition-colors"
+                    @click=${this.handleKill}
+                    ?disabled=${this.killing}
+                  >
+                    ${this.killing ? this.renderKillingAnimation() : 'kill'}
+                  </button>
+                `
+              : ''}
+          </div>
+        </div>
+
+        <!-- Terminal Preview -->
+        <div
+          class="session-preview mt-2 rounded overflow-hidden"
+          style="background: #1e1e1e; border: 1px solid #3e3e42; position: relative;"
+          @click=${(e: Event) => e.stopPropagation()}
+        >
+          <vibe-terminal-buffer
+            session-id="${this.session.id}"
+            preview="true"
+            @esc-detected=${(e: CustomEvent) => {
+              this.hasEscPrompt = e.detail.hasEscPrompt;
+            }}
+          ></vibe-terminal-buffer>
+        </div>
+      </div>
+    `;
   }
 }

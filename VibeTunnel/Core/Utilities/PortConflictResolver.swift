@@ -22,7 +22,7 @@ struct ProcessDetails {
     
     /// Check if this is one of our managed servers
     var isManagedServer: Bool {
-        name == "tty-fwd" || name.contains("node") && (path?.contains("VibeTunnel") ?? false)
+        name == "tty-fwd" || name == "vibetunnel" || name.contains("node") && (path?.contains("VibeTunnel") ?? false)
     }
 }
 
@@ -45,7 +45,7 @@ enum ConflictAction {
 /// Resolves port conflicts and suggests remediation
 @MainActor
 final class PortConflictResolver {
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "PortConflictResolver")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "PortConflictResolver")
     
     static let shared = PortConflictResolver()
     
@@ -133,6 +133,28 @@ final class PortConflictResolver {
             // These require user action
             throw PortConflictError.requiresUserAction
         }
+    }
+    
+    /// Force kill any process, regardless of type
+    func forceKillProcess(_ conflict: PortConflict) async throws {
+        logger.info("Force killing process: \(conflict.process.name) (PID: \(conflict.process.pid))")
+        
+        // Kill the process
+        let killProcess = Process()
+        killProcess.executableURL = URL(fileURLWithPath: "/bin/kill")
+        killProcess.arguments = ["-9", "\(conflict.process.pid)"]
+        
+        try killProcess.run()
+        killProcess.waitUntilExit()
+        
+        if killProcess.terminationStatus != 0 {
+            // Try with sudo if regular kill fails
+            logger.warning("Regular kill failed, attempting with elevated privileges")
+            throw PortConflictError.failedToKillProcess(pid: conflict.process.pid)
+        }
+        
+        // Wait a moment for port to be released
+        try await Task.sleep(for: .milliseconds(500))
     }
     
     /// Find available ports near a given port

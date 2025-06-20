@@ -54,7 +54,7 @@ class ServerManager {
     private var monitoringTask: Task<Void, Never>?
     private var crashRecoveryTask: Task<Void, Never>?
 
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "ServerManager")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "ServerManager")
     private var logContinuation: AsyncStream<ServerLogEntry>.Continuation?
     private var serverLogTask: Task<Void, Never>?
     private(set) var logStream: AsyncStream<ServerLogEntry>!
@@ -322,6 +322,9 @@ class ServerManager {
 
         // Update mode
         serverMode = mode
+        
+        // Update VT config file to match
+        await updateVTConfig(mode: mode)
 
         // Start new server
         await start()
@@ -358,6 +361,8 @@ class ServerManager {
             HummingbirdServer()
         case .rust:
             RustServer()
+        case .go:
+            GoServer()
         }
     }
 
@@ -551,6 +556,31 @@ class ServerManager {
             logger.info("Cleared authentication cache")
         }
     }
+    
+    /// Update VT config file with the preferred server
+    private func updateVTConfig(mode: ServerMode) async {
+        let configPath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".vibetunnel")
+            .appendingPathComponent("config.json")
+        
+        // Ensure .vibetunnel directory exists
+        let vibetunnelDir = configPath.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: vibetunnelDir, withIntermediateDirectories: true)
+        
+        // Prepare config data
+        let serverValue = mode == .rust ? "rust" : "go" // Map hummingbird to go as well
+        let config = ["server": serverValue]
+        
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(config)
+            try data.write(to: configPath)
+            logger.info("Updated VT config to use \(serverValue) server")
+        } catch {
+            logger.error("Failed to update VT config: \(error)")
+        }
+    }
 }
 
 // MARK: - Port Conflict Error Extension
@@ -558,7 +588,7 @@ class ServerManager {
 extension PortConflictError {
     static func portInUseByApp(appName: String, port: Int, alternatives: [Int]) -> Error {
         NSError(
-            domain: "com.steipete.VibeTunnel.ServerManager",
+            domain: "sh.vibetunnel.vibetunnel.ServerManager",
             code: 1001,
             userInfo: [
                 NSLocalizedDescriptionKey: "Port \(port) is in use by \(appName)",

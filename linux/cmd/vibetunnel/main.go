@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/vibetunnel/linux/pkg/api"
@@ -14,25 +17,26 @@ import (
 
 var (
 	// Session management flags
-	controlPath   string
-	sessionName   string
-	listSessions  bool
-	sendKey       string
-	sendText      string
-	signalCmd     string
-	stopSession   bool
-	killSession   bool
-	cleanupExited bool
+	controlPath       string
+	sessionName       string
+	listSessions      bool
+	sendKey           string
+	sendText          string
+	signalCmd         string
+	stopSession       bool
+	killSession       bool
+	cleanupExited     bool
+	detachedSessionID string
 
 	// Server flags
 	serve      bool
 	staticPath string
 
 	// Network and access configuration
-	port       string
-	bindAddr   string
-	localhost  bool
-	network    bool
+	port      string
+	bindAddr  string
+	localhost bool
+	network   bool
 
 	// Security flags
 	password        string
@@ -52,10 +56,10 @@ var (
 	ngrokToken   string
 
 	// Advanced options
-	debugMode       bool
-	cleanupStartup  bool
-	serverMode      string
-	updateChannel   string
+	debugMode      bool
+	cleanupStartup bool
+	serverMode     string
+	updateChannel  string
 
 	// Configuration file
 	configFile string
@@ -67,6 +71,10 @@ var rootCmd = &cobra.Command{
 	Long: `VibeTunnel allows you to access your Linux terminal from any web browser.
 This is the Linux implementation compatible with the macOS VibeTunnel app.`,
 	RunE: run,
+	// Allow passing through unknown flags to the command being executed
+	FParseErrWhitelist: cobra.FParseErrWhitelist{
+		UnknownFlags: true,
+	},
 }
 
 func init() {
@@ -84,6 +92,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&stopSession, "stop", false, "Stop session (SIGTERM)")
 	rootCmd.Flags().BoolVar(&killSession, "kill", false, "Kill session (SIGKILL)")
 	rootCmd.Flags().BoolVar(&cleanupExited, "cleanup-exited", false, "Clean up exited sessions")
+	rootCmd.Flags().StringVar(&detachedSessionID, "detached-session", "", "Run as detached session with given ID")
 
 	// Server flags
 	rootCmd.Flags().BoolVar(&serve, "serve", false, "Start HTTP server")
@@ -126,7 +135,7 @@ func init() {
 		Use:   "version",
 		Short: "Show version information",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("VibeTunnel Linux v1.0.0")
+			fmt.Println("VibeTunnel Linux v1.0.2")
 			fmt.Println("Compatible with VibeTunnel macOS app")
 		},
 	})
@@ -155,13 +164,21 @@ func run(cmd *cobra.Command, args []string) error {
 		port = cfg.Server.Port
 	}
 
+	// Handle detached session mode
+	if detachedSessionID != "" {
+		// We're running as a detached session
+		// TODO: Implement RunDetachedSession
+		return fmt.Errorf("detached session mode not yet implemented")
+	}
+
 	manager := session.NewManager(controlPath)
 
 	// Handle cleanup on startup if enabled
 	if cfg.Advanced.CleanupStartup || cleanupStartup {
-		fmt.Println("Cleaning up sessions on startup...")
-		if err := manager.CleanupExitedSessions(); err != nil {
-			fmt.Printf("Warning: cleanup failed: %v\n", err)
+		fmt.Println("Updating session statuses on startup...")
+		// Only update statuses, don't remove sessions (matching Rust behavior)
+		if err := manager.UpdateAllSessionStatuses(); err != nil {
+			fmt.Printf("Warning: status update failed: %v\n", err)
 		}
 	}
 
@@ -179,7 +196,8 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	if cleanupExited {
-		return manager.CleanupExitedSessions()
+		// Match Rust behavior: actually remove dead sessions on manual cleanup
+		return manager.RemoveExitedSessions()
 	}
 
 	// Handle session input/control operations
@@ -230,25 +248,21 @@ func run(cmd *cobra.Command, args []string) error {
 }
 
 func startServer(cfg *config.Config, manager *session.Manager) error {
-	// Determine static path
-	if staticPath == "" && cfg.Server.StaticPath == "" {
-		execPath, err := os.Executable()
-		if err != nil {
-			return fmt.Errorf("failed to get executable path: %w", err)
-		}
-		// Try dist first, fallback to public
-		distPath := filepath.Join(filepath.Dir(execPath), "..", "web", "dist")
-		publicPath := filepath.Join(filepath.Dir(execPath), "..", "web", "public")
-		
-		if _, err := os.Stat(distPath); err == nil {
-			staticPath = distPath
-		} else if _, err := os.Stat(publicPath); err == nil {
-			staticPath = publicPath
-		} else {
-			staticPath = distPath // Default to dist path even if it doesn't exist
-		}
-	} else if cfg.Server.StaticPath != "" {
+	// Terminal spawning behavior:
+	// 1. When spawn_terminal=true in API requests, we first try to connect to the Mac app's socket
+	// 2. If Mac app is running, it handles the terminal spawn via TerminalSpawnService 
+	// 3. If Mac app is not running, we fall back to native terminal spawning (osascript on macOS)
+	// This matches the Rust implementation's behavior.
+	
+	// Use static path from command line or config
+	if staticPath == "" {
 		staticPath = cfg.Server.StaticPath
+	}
+	
+	// When running from Mac app, static path should always be provided via --static-path
+	// When running standalone, user must provide the path
+	if staticPath == "" {
+		return fmt.Errorf("static path not specified. Use --static-path flag or configure in config file")
 	}
 
 	// Determine password
@@ -259,16 +273,16 @@ func startServer(cfg *config.Config, manager *session.Manager) error {
 
 	// Determine bind address
 	bindAddress := determineBind(cfg)
-	
+
 	// Convert port to int
 	portInt, err := strconv.Atoi(port)
 	if err != nil {
 		return fmt.Errorf("invalid port: %w", err)
 	}
-	
+
 	// Create and configure server
 	server := api.NewServer(manager, staticPath, serverPassword, portInt)
-	
+
 	// Configure ngrok if enabled
 	var ngrokURL string
 	if cfg.Ngrok.Enabled || ngrokEnabled {
@@ -309,7 +323,7 @@ func startServer(cfg *config.Config, manager *session.Manager) error {
 
 		// Create TLS server
 		tlsServer := api.NewTLSServer(server, tlsConfig)
-		
+
 		// Print startup information for TLS
 		fmt.Printf("Starting VibeTunnel HTTPS server on %s:%s\n", bindAddress, tlsPort)
 		if tlsAutoRedirect {
@@ -317,7 +331,7 @@ func startServer(cfg *config.Config, manager *session.Manager) error {
 		}
 		fmt.Printf("Serving web UI from: %s\n", staticPath)
 		fmt.Printf("Control directory: %s\n", controlPath)
-		
+
 		if tlsSelfSigned {
 			fmt.Printf("TLS: Using self-signed certificates for localhost\n")
 		} else if tlsDomain != "" {
@@ -325,15 +339,15 @@ func startServer(cfg *config.Config, manager *session.Manager) error {
 		} else if tlsCertPath != "" && tlsKeyPath != "" {
 			fmt.Printf("TLS: Using custom certificates\n")
 		}
-		
+
 		if serverPassword != "" {
 			fmt.Printf("Basic auth enabled with username: admin\n")
 		}
-		
+
 		if ngrokURL != "" {
 			fmt.Printf("ngrok tunnel: %s\n", ngrokURL)
 		}
-		
+
 		if cfg.Advanced.DebugMode || debugMode {
 			fmt.Printf("Debug mode enabled\n")
 		}
@@ -344,7 +358,7 @@ func startServer(cfg *config.Config, manager *session.Manager) error {
 			httpAddr = fmt.Sprintf("%s:%s", bindAddress, port)
 		}
 		httpsAddr := fmt.Sprintf("%s:%s", bindAddress, tlsPort)
-		
+
 		return tlsServer.StartTLS(httpAddr, httpsAddr)
 	}
 
@@ -352,15 +366,15 @@ func startServer(cfg *config.Config, manager *session.Manager) error {
 	fmt.Printf("Starting VibeTunnel server on %s:%s\n", bindAddress, port)
 	fmt.Printf("Serving web UI from: %s\n", staticPath)
 	fmt.Printf("Control directory: %s\n", controlPath)
-	
+
 	if serverPassword != "" {
 		fmt.Printf("Basic auth enabled with username: admin\n")
 	}
-	
+
 	if ngrokURL != "" {
 		fmt.Printf("ngrok tunnel: %s\n", ngrokURL)
 	}
-	
+
 	if cfg.Advanced.DebugMode || debugMode {
 		fmt.Printf("Debug mode enabled\n")
 	}
@@ -376,7 +390,7 @@ func determineBind(cfg *config.Config) string {
 	if network {
 		return "0.0.0.0"
 	}
-	
+
 	// Check configuration
 	switch cfg.Server.AccessMode {
 	case "localhost":
@@ -389,8 +403,126 @@ func determineBind(cfg *config.Config) string {
 	}
 }
 
-
 func main() {
+	// Check if we're being run with TTY_SESSION_ID (spawned by Mac app)
+	if sessionID := os.Getenv("TTY_SESSION_ID"); sessionID != "" {
+		// We're running in a terminal spawned by the Mac app
+		// Redirect logs to avoid polluting the terminal
+		logFile, err := os.OpenFile("/tmp/vibetunnel-session.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err == nil {
+			log.SetOutput(logFile)
+			defer logFile.Close()
+		}
+		
+		// Use the existing session ID instead of creating a new one
+		homeDir, _ := os.UserHomeDir()
+		defaultControlPath := filepath.Join(homeDir, ".vibetunnel", "control")
+		cfg := config.LoadConfig(filepath.Join(homeDir, ".vibetunnel", "config.yaml"))
+		if cfg.ControlPath != "" {
+			defaultControlPath = cfg.ControlPath
+		}
+		
+		manager := session.NewManager(defaultControlPath)
+		
+		// Wait for the session to be created by the API server
+		// The server creates the session before sending the spawn request
+		var sess *session.Session
+		for i := 0; i < 50; i++ { // Try for up to 5 seconds
+			sess, err = manager.GetSession(sessionID)
+			if err == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Session %s not found\n", sessionID)
+			os.Exit(1)
+		}
+		
+		// Attach to the session
+		if err := sess.Attach(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	
+	// Check for special case: if we have args but no recognized VibeTunnel flags,
+	// treat everything as a command to execute (compatible with old Rust behavior)
+	if len(os.Args) > 1 {
+		// Parse flags without executing to check what we have
+		rootCmd.DisableFlagParsing = true
+		rootCmd.ParseFlags(os.Args[1:])
+		rootCmd.DisableFlagParsing = false
+		
+		// Get the command and check if first arg is a subcommand
+		args := os.Args[1:]
+		if len(args) > 0 && (args[0] == "version" || args[0] == "config") {
+			// This is a subcommand, let Cobra handle it normally
+		} else {
+			// Check if any args look like VibeTunnel flags
+			hasVibeTunnelFlags := false
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "-") {
+					// Check if this is one of our known flags
+					flag := strings.TrimLeft(arg, "-")
+					flag = strings.Split(flag, "=")[0] // Handle --flag=value format
+					
+					knownFlags := []string{
+						"serve", "port", "p", "bind", "localhost", "network",
+						"password", "password-enabled", "tls", "tls-port", "tls-domain",
+						"tls-self-signed", "tls-cert", "tls-key", "tls-redirect",
+						"ngrok", "ngrok-token", "debug", "cleanup-startup",
+						"server-mode", "update-channel", "config", "c",
+						"control-path", "session-name", "list-sessions",
+						"send-key", "send-text", "signal", "stop", "kill",
+						"cleanup-exited", "detached-session", "static-path", "help", "h",
+					}
+					
+					for _, known := range knownFlags {
+						if flag == known {
+							hasVibeTunnelFlags = true
+							break
+						}
+					}
+					if hasVibeTunnelFlags {
+						break
+					}
+				}
+			}
+			
+			// If no VibeTunnel flags found, treat everything as a command
+			if !hasVibeTunnelFlags && len(args) > 0 {
+				homeDir, _ := os.UserHomeDir()
+				defaultControlPath := filepath.Join(homeDir, ".vibetunnel", "control")
+				cfg := config.LoadConfig(filepath.Join(homeDir, ".vibetunnel", "config.yaml"))
+				if cfg.ControlPath != "" {
+					defaultControlPath = cfg.ControlPath
+				}
+				
+				manager := session.NewManager(defaultControlPath)
+				sess, err := manager.CreateSession(session.Config{
+					Name:    "",
+					Cmdline: args,
+					Cwd:     ".",
+				})
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+				
+				// Attach to the session
+				if err := sess.Attach(); err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
+				return
+			}
+		}
+	}
+	
+	// Fall back to Cobra command handling for flags and structured commands
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

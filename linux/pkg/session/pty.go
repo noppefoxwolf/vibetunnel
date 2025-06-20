@@ -17,19 +17,23 @@ import (
 	"golang.org/x/term"
 )
 
+// useSelectPolling determines whether to use select-based polling
+// Enable this for better control FIFO integration
+const useSelectPolling = true
+
 type PTY struct {
-	session *Session
-	cmd     *exec.Cmd
-	pty     *os.File
-	oldState *term.State
+	session      *Session
+	cmd          *exec.Cmd
+	pty          *os.File
+	oldState     *term.State
 	streamWriter *protocol.StreamWriter
-	stdinPipe *os.File
-	resizeMutex sync.Mutex
+	stdinPipe    *os.File
+	resizeMutex  sync.Mutex
 }
 
 func NewPTY(session *Session) (*PTY, error) {
-	log.Printf("[DEBUG] NewPTY: Starting PTY creation for session %s", session.ID[:8])
-	
+	debugLog("[DEBUG] NewPTY: Starting PTY creation for session %s", session.ID[:8])
+
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/bash"
@@ -40,7 +44,7 @@ func NewPTY(session *Session) (*PTY, error) {
 		cmdline = []string{shell}
 	}
 
-	log.Printf("[DEBUG] NewPTY: Initial cmdline: %v", cmdline)
+	debugLog("[DEBUG] NewPTY: Initial cmdline: %v", cmdline)
 
 	// For shells, force interactive mode to prevent immediate exit
 	if len(cmdline) == 1 && (strings.HasSuffix(cmdline[0], "bash") || strings.HasSuffix(cmdline[0], "zsh") || strings.HasSuffix(cmdline[0], "sh")) {
@@ -48,11 +52,11 @@ func NewPTY(session *Session) (*PTY, error) {
 		// Update session info to reflect the actual command being run
 		session.info.Args = cmdline
 		session.info.Cmdline = strings.Join(cmdline, " ")
-		log.Printf("[DEBUG] NewPTY: Added -i flag, cmdline now: %v", cmdline)
+		debugLog("[DEBUG] NewPTY: Added -i flag, cmdline now: %v", cmdline)
 	}
-	
+
 	cmd := exec.Command(cmdline[0], cmdline[1:]...)
-	
+
 	// Set working directory, ensuring it's valid
 	if session.info.Cwd != "" {
 		// Verify the directory exists and is accessible
@@ -61,9 +65,9 @@ func NewPTY(session *Session) (*PTY, error) {
 			return nil, fmt.Errorf("working directory '%s' not accessible: %w", session.info.Cwd, err)
 		}
 		cmd.Dir = session.info.Cwd
-		log.Printf("[DEBUG] NewPTY: Set working directory to: %s", session.info.Cwd)
+		debugLog("[DEBUG] NewPTY: Set working directory to: %s", session.info.Cwd)
 	}
-	
+
 	// Set up environment with proper terminal settings
 	env := os.Environ()
 	env = append(env, "TERM="+session.info.Term)
@@ -76,7 +80,7 @@ func NewPTY(session *Session) (*PTY, error) {
 		return nil, fmt.Errorf("failed to start PTY: %w", err)
 	}
 
-	log.Printf("[DEBUG] NewPTY: PTY started successfully, PID: %d", cmd.Process.Pid)
+	debugLog("[DEBUG] NewPTY: PTY started successfully, PID: %d", cmd.Process.Pid)
 
 	if err := pty.Setsize(ptmx, &pty.Winsize{
 		Rows: uint16(session.info.Height),
@@ -113,13 +117,19 @@ func NewPTY(session *Session) (*PTY, error) {
 	}
 
 	stdinPath := session.StdinPath()
-	log.Printf("[DEBUG] NewPTY: Creating stdin FIFO at: %s", stdinPath)
+	debugLog("[DEBUG] NewPTY: Creating stdin FIFO at: %s", stdinPath)
 	if err := syscall.Mkfifo(stdinPath, 0600); err != nil {
 		log.Printf("[ERROR] NewPTY: Failed to create stdin pipe: %v", err)
 		streamOut.Close()
 		ptmx.Close()
 		cmd.Process.Kill()
 		return nil, fmt.Errorf("failed to create stdin pipe: %w", err)
+	}
+
+	// Create control FIFO
+	if err := session.createControlFIFO(); err != nil {
+		log.Printf("[ERROR] NewPTY: Failed to create control FIFO: %v", err)
+		// Don't fail if control FIFO creation fails - it's optional
 	}
 
 	return &PTY{
@@ -140,7 +150,7 @@ func (p *PTY) Pid() int {
 func (p *PTY) Run() error {
 	defer p.Close()
 
-	log.Printf("[DEBUG] PTY.Run: Starting PTY run for session %s, PID %d", p.session.ID[:8], p.cmd.Process.Pid)
+	debugLog("[DEBUG] PTY.Run: Starting PTY run for session %s, PID %d", p.session.ID[:8], p.cmd.Process.Pid)
 
 	stdinPipe, err := os.OpenFile(p.session.StdinPath(), os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -150,20 +160,26 @@ func (p *PTY) Run() error {
 	defer stdinPipe.Close()
 	p.stdinPipe = stdinPipe
 
-	log.Printf("[DEBUG] PTY.Run: Stdin pipe opened successfully")
+	debugLog("[DEBUG] PTY.Run: Stdin pipe opened successfully")
 
+	// Use select-based polling if available
+	if useSelectPolling {
+		return p.pollWithSelect()
+	}
+
+	// Fallback to goroutine-based implementation
 	errCh := make(chan error, 3)
 
 	go func() {
-		log.Printf("[DEBUG] PTY.Run: Starting output reading goroutine")
+		debugLog("[DEBUG] PTY.Run: Starting output reading goroutine")
 		buf := make([]byte, 32*1024)
-		
+
 		for {
 			// Use a timeout-based approach for cross-platform compatibility
 			// This avoids the complexity of non-blocking I/O syscalls
 			n, err := p.pty.Read(buf)
 			if n > 0 {
-				log.Printf("[DEBUG] PTY.Run: Read %d bytes of output from PTY", n)
+				debugLog("[DEBUG] PTY.Run: Read %d bytes of output from PTY", n)
 				if err := p.streamWriter.WriteOutput(buf[:n]); err != nil {
 					log.Printf("[ERROR] PTY.Run: Failed to write output: %v", err)
 					errCh <- fmt.Errorf("failed to write output: %w", err)
@@ -175,7 +191,7 @@ func (p *PTY) Run() error {
 			if err != nil {
 				if err == io.EOF {
 					// For blocking reads, EOF typically means the process exited
-					log.Printf("[DEBUG] PTY.Run: PTY reached EOF, process likely exited")
+					debugLog("[DEBUG] PTY.Run: PTY reached EOF, process likely exited")
 					return
 				}
 				// For other errors, this is a problem
@@ -190,12 +206,12 @@ func (p *PTY) Run() error {
 	}()
 
 	go func() {
-		log.Printf("[DEBUG] PTY.Run: Starting stdin reading goroutine")
+		debugLog("[DEBUG] PTY.Run: Starting stdin reading goroutine")
 		buf := make([]byte, 4096)
 		for {
 			n, err := stdinPipe.Read(buf)
 			if n > 0 {
-				log.Printf("[DEBUG] PTY.Run: Read %d bytes from stdin, writing to PTY", n)
+				debugLog("[DEBUG] PTY.Run: Read %d bytes from stdin, writing to PTY", n)
 				if _, err := p.pty.Write(buf[:n]); err != nil {
 					log.Printf("[ERROR] PTY.Run: Failed to write to PTY: %v", err)
 					// Only exit if the PTY is really broken, not on temporary errors
@@ -204,7 +220,7 @@ func (p *PTY) Run() error {
 						return
 					}
 					// For broken pipe, just continue - the PTY might be closing
-					log.Printf("[DEBUG] PTY.Run: PTY write failed with pipe error, continuing...")
+					debugLog("[DEBUG] PTY.Run: PTY write failed with pipe error, continuing...")
 					time.Sleep(10 * time.Millisecond)
 				}
 				// Continue immediately after successful write
@@ -230,35 +246,46 @@ func (p *PTY) Run() error {
 	}()
 
 	go func() {
-		log.Printf("[DEBUG] PTY.Run: Starting process wait goroutine for PID %d", p.cmd.Process.Pid)
+		debugLog("[DEBUG] PTY.Run: Starting process wait goroutine for PID %d", p.cmd.Process.Pid)
 		err := p.cmd.Wait()
-		log.Printf("[DEBUG] PTY.Run: Process wait completed for PID %d, error: %v", p.cmd.Process.Pid, err)
-		
+		debugLog("[DEBUG] PTY.Run: Process wait completed for PID %d, error: %v", p.cmd.Process.Pid, err)
+
 		if err != nil {
 			if exitErr, ok := err.(*exec.ExitError); ok {
 				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 					exitCode := status.ExitStatus()
 					p.session.info.ExitCode = &exitCode
-					log.Printf("[DEBUG] PTY.Run: Process exited with code %d", exitCode)
+					debugLog("[DEBUG] PTY.Run: Process exited with code %d", exitCode)
 				}
 			} else {
-				log.Printf("[DEBUG] PTY.Run: Process exited with non-exit error: %v", err)
+				debugLog("[DEBUG] PTY.Run: Process exited with non-exit error: %v", err)
 			}
 		} else {
 			exitCode := 0
 			p.session.info.ExitCode = &exitCode
-			log.Printf("[DEBUG] PTY.Run: Process exited normally (code 0)")
+			debugLog("[DEBUG] PTY.Run: Process exited normally (code 0)")
 		}
 		p.session.info.Status = string(StatusExited)
 		p.session.info.Save(p.session.Path())
-		log.Printf("[DEBUG] PTY.Run: PROCESS WAIT GOROUTINE sending completion to errCh")
+		
+		// Reap any zombie child processes
+		for {
+			var status syscall.WaitStatus
+			pid, err := syscall.Wait4(-1, &status, syscall.WNOHANG, nil)
+			if err != nil || pid <= 0 {
+				break
+			}
+			debugLog("[DEBUG] PTY.Run: Reaped zombie process PID %d", pid)
+		}
+		
+		debugLog("[DEBUG] PTY.Run: PROCESS WAIT GOROUTINE sending completion to errCh")
 		errCh <- err
 	}()
 
-	log.Printf("[DEBUG] PTY.Run: Waiting for first error from goroutines...")
+	debugLog("[DEBUG] PTY.Run: Waiting for first error from goroutines...")
 	result := <-errCh
-	log.Printf("[DEBUG] PTY.Run: Received error from goroutine: %v", result)
-	log.Printf("[DEBUG] PTY.Run: Process PID %d status after error: alive=%v", p.cmd.Process.Pid, p.session.IsAlive())
+	debugLog("[DEBUG] PTY.Run: Received error from goroutine: %v", result)
+	debugLog("[DEBUG] PTY.Run: Process PID %d status after error: alive=%v", p.cmd.Process.Pid, p.session.IsAlive())
 	return result
 }
 
@@ -327,19 +354,19 @@ func (p *PTY) Resize(width, height int) error {
 	p.resizeMutex.Lock()
 	defer p.resizeMutex.Unlock()
 
-	log.Printf("[DEBUG] PTY.Resize: Resizing PTY to %dx%d for session %s", width, height, p.session.ID[:8])
-	
+	debugLog("[DEBUG] PTY.Resize: Resizing PTY to %dx%d for session %s", width, height, p.session.ID[:8])
+
 	// Resize the actual PTY
 	err := pty.Setsize(p.pty, &pty.Winsize{
 		Rows: uint16(height),
 		Cols: uint16(width),
 	})
-	
+
 	if err != nil {
 		log.Printf("[ERROR] PTY.Resize: Failed to resize PTY: %v", err)
 		return fmt.Errorf("failed to resize PTY: %w", err)
 	}
-	
+
 	// Write resize event to stream if streamWriter is available
 	if p.streamWriter != nil {
 		if err := p.streamWriter.WriteResize(uint32(width), uint32(height)); err != nil {
@@ -347,8 +374,8 @@ func (p *PTY) Resize(width, height int) error {
 			// Don't fail the resize operation if we can't write the event
 		}
 	}
-	
-	log.Printf("[DEBUG] PTY.Resize: Successfully resized PTY to %dx%d", width, height)
+
+	debugLog("[DEBUG] PTY.Resize: Successfully resized PTY to %dx%d", width, height)
 	return nil
 }
 

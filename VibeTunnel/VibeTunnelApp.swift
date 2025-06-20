@@ -1,6 +1,7 @@
 import AppKit
 import os.log
 import SwiftUI
+import UserNotifications
 
 /// Main entry point for the VibeTunnel macOS application
 @main
@@ -68,13 +69,13 @@ struct VibeTunnelApp: App {
 
 /// Manages app lifecycle, single instance enforcement, and core services
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, @preconcurrency UNUserNotificationCenterDelegate {
     private(set) var sparkleUpdaterManager: SparkleUpdaterManager?
     private let serverManager = ServerManager.shared
     private let sessionMonitor = SessionMonitor.shared
     private let serverMonitor = ServerMonitor.shared
     private let ngrokService = NgrokService.shared
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "AppDelegate")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "AppDelegate")
 
     /// Distributed notification name used to ask an existing instance to show the Settings window.
     private static let showSettingsNotification = Notification.Name("sh.vibetunnel.vibetunnel.showSettings")
@@ -102,6 +103,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Initialize Sparkle updater manager
         sparkleUpdaterManager = SparkleUpdaterManager.shared
+        
+        // Set up notification center delegate
+        UNUserNotificationCenter.current().delegate = self
+        
+        // Request notification permissions
+        Task {
+            do {
+                let granted = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
+                logger.info("Notification permission granted: \(granted)")
+            } catch {
+                logger.error("Failed to request notification permissions: \(error)")
+            }
+        }
 
         // Initialize dock icon visibility through DockIconManager
         DockIconManager.shared.updateDockVisibility()
@@ -288,5 +302,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Notification.Name("checkForUpdates"),
             object: nil
         )
+    }
+    
+    // MARK: - UNUserNotificationCenterDelegate
+    
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse,
+                                withCompletionHandler completionHandler: @escaping () -> Void) {
+        logger.info("Received notification response: \(response.actionIdentifier)")
+        
+        // Handle update reminder actions
+        if response.notification.request.content.categoryIdentifier == "UPDATE_REMINDER" {
+            sparkleUpdaterManager?.userDriverDelegate?.handleNotificationAction(
+                response.actionIdentifier,
+                userInfo: response.notification.request.content.userInfo
+            )
+        }
+        
+        completionHandler()
+    }
+    
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Show notifications even when app is in foreground
+        completionHandler([.banner, .sound])
     }
 }

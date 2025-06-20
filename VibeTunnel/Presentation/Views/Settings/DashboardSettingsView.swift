@@ -37,7 +37,7 @@ struct DashboardSettingsView: View {
 
     private let dashboardKeychain = DashboardKeychain.shared
     private let ngrokService = NgrokService.shared
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "DashboardSettings")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "DashboardSettings")
 
     private var accessMode: DashboardAccessMode {
         DashboardAccessMode(rawValue: accessModeString) ?? .localhost
@@ -214,7 +214,7 @@ struct DashboardSettingsView: View {
                     }
                 } else {
                     // Just password change, no network mode switch
-                    await DashboardSettingsView.updateServerForPasswordChange(action: .apply, logger: logger)
+                    await Self.updateServerForPasswordChange(action: .apply, logger: logger)
                 }
             }
         } else {
@@ -609,7 +609,7 @@ private struct PortConfigurationView: View {
     @State private var alternativePorts: [Int] = []
 
     private let serverManager = ServerManager.shared
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "PortConfiguration")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "PortConfiguration")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -689,28 +689,48 @@ private struct PortConfigurationView: View {
                             .foregroundColor(.orange)
                     }
 
-                    if !conflict.alternativePorts.isEmpty {
-                        HStack(spacing: 4) {
-                            Text("Try port:")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        if !conflict.alternativePorts.isEmpty {
+                            HStack(spacing: 4) {
+                                Text("Try port:")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
 
-                            ForEach(conflict.alternativePorts.prefix(3), id: \.self) { port in
-                                Button(String(port)) {
-                                    serverPort = String(port)
-                                    portNumber = port
-                                    restartServerWithNewPort(port)
+                                ForEach(conflict.alternativePorts.prefix(3), id: \.self) { port in
+                                    Button(String(port)) {
+                                        serverPort = String(port)
+                                        portNumber = port
+                                        restartServerWithNewPort(port)
+                                    }
+                                    .buttonStyle(.link)
+                                    .font(.caption)
+                                }
+
+                                Button("Choose...") {
+                                    showPortPicker()
                                 }
                                 .buttonStyle(.link)
                                 .font(.caption)
                             }
-
-                            Button("Choose...") {
-                                showPortPicker()
-                            }
-                            .buttonStyle(.link)
-                            .font(.caption)
                         }
+                        
+                        Spacer()
+                        
+                        Button {
+                            Task {
+                                await forceQuitConflictingProcess(conflict)
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                Text("Kill Process")
+                                    .font(.caption)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(.red)
                     }
                 }
                 .padding(.vertical, 8)
@@ -766,7 +786,8 @@ private struct PortConfigurationView: View {
 
     private func forceQuitConflictingProcess(_ conflict: PortConflict) async {
         do {
-            try await PortConflictResolver.shared.resolveConflict(conflict)
+            // Try to use forceKillProcess which works for any process
+            try await PortConflictResolver.shared.forceKillProcess(conflict)
             portConflict = nil
             // Restart server after clearing conflict
             restartServerWithNewPort(portNumber)
@@ -858,7 +879,7 @@ private struct NgrokToggleView: View {
     let checkAndStartNgrok: () -> Void
     let stopNgrok: () -> Void
 
-    private let logger = Logger(subsystem: "com.steipete.VibeTunnel", category: "NgrokToggle")
+    private let logger = Logger(subsystem: "sh.vibetunnel.vibetunnel", category: "NgrokToggle")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
