@@ -1,0 +1,16 @@
+# Binaries
+vibetunnel-server
+vibetunnel-fwd
+*.exe
+
+# Test artifacts
+*.log
+*.test
+coverage.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
