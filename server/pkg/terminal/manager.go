@@ -15,16 +15,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ActiveState/vt10x"
 	"github.com/fsnotify/fsnotify"
+	"github.com/hinshun/vt10x"
 	"github.com/vibetunnel/vibetunnel-server/pkg/config"
 )
 
 // Terminal represents a terminal state with vt10x
 type Terminal struct {
 	SessionID  string
-	vt         *vt10x.VT
-	state      *vt10x.State
+	vt         vt10x.Terminal
 	LastUpdate time.Time
 	watcher    *fsnotify.Watcher
 	streamFile *os.File
@@ -72,7 +71,7 @@ func NewManager(cfg *config.Config) *Manager {
 	}
 }
 
-// GetOrCreateTerminal gets or creates a terminal for a session
+// GetOrCreateTerminal returns or creates a terminal for the given session
 func (m *Manager) GetOrCreateTerminal(sessionID string) (*Terminal, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -82,30 +81,28 @@ func (m *Manager) GetOrCreateTerminal(sessionID string) (*Terminal, error) {
 	}
 
 	// Create new terminal with vt10x
-	state := &vt10x.State{}
-
-	vt, err := vt10x.New(state, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// Resize after creation
-	vt.Resize(m.config.DefaultCols, m.config.DefaultRows)
+	vt := vt10x.New(
+		vt10x.WithSize(m.config.DefaultCols, m.config.DefaultRows),
+		vt10x.WithWriter(os.Stdout), // We don't actually write to stdout, just need a writer
+	)
 
 	term := &Terminal{
 		SessionID:  sessionID,
 		vt:         vt,
-		state:      state,
 		LastUpdate: time.Now(),
 	}
 
-	// Start watching stream file
+	m.terminals[sessionID] = term
+
+	// Start watching the stream file if it exists
 	streamPath := filepath.Join(m.config.ControlDir, sessionID, "stream-out")
-	if err := m.startWatchingStream(term, streamPath); err != nil {
-		return nil, err
+	if _, err := os.Stat(streamPath); err == nil {
+		if err := m.startWatchingStream(term, streamPath); err != nil {
+			log.Printf("Failed to start watching stream for session %s: %v", sessionID, err)
+		}
 	}
 
-	m.terminals[sessionID] = term
+	log.Printf("Created terminal for session: %s", sessionID)
 	return term, nil
 }
 
@@ -309,8 +306,9 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 		}
 	}()
 
-	cols, rows := term.state.Size()
-	cursorX, cursorY := term.state.Cursor()
+	cols, rows := term.vt.Size()
+	cursor := term.vt.Cursor()
+	cursorX, cursorY := cursor.X, cursor.Y
 
 	log.Printf("[DEBUG] encodeSnapshot: terminal size %dx%d, cursor at (%d,%d)", cols, rows, cursorX, cursorY)
 
@@ -325,26 +323,51 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 	actualCols := rows
 	actualRows := cols
 
-	// Build 2D slice of cells as [rows][cols] to match Node.js/xterm.js and frontend expectations
-	// Outer slice = rows (Y), inner slice = columns (X)
+	// Extract cells from current terminal state (bottom lines only)
 	cells := make([][]Cell, actualRows)
-	for y := 0; y < actualRows; y++ {
-		row := make([]Cell, actualCols)
-		for x := 0; x < actualCols; x++ {
-			ch, fg, bg := safeCell(term.state, x, y) // (x, y) is correct: x=col, y=row
-			row[x] = Cell{
-				Char:    ch,
-				FgColor: convertColor(fg),
-				BgColor: convertColor(bg),
+	for row := 0; row < actualRows; row++ {
+		rowCells := make([]Cell, 0)
+
+		// Get cells for this row
+		for col := 0; col < actualCols; col++ {
+			glyph := safeCell(term.vt, col, row)
+
+			// Skip zero-width cells (part of wide characters) - like Node.js
+			if glyph.Char == 0 {
+				continue
+			}
+
+			cell := Cell{
+				Char:    glyph.Char,
+				FgColor: convertColor(glyph.FG),
+				BgColor: convertColor(glyph.BG),
+			}
+
+			// Only include non-default values (like Node.js)
+			// Keep -1 as the undefined value, don't convert to 0
+
+			rowCells = append(rowCells, cell)
+		}
+
+		// Trim blank cells from the end of the line (like Node.js)
+		lastNonBlankCell := len(rowCells) - 1
+		for ; lastNonBlankCell >= 0; lastNonBlankCell-- {
+			cell := rowCells[lastNonBlankCell]
+			// Node.js trims cells that are spaces with no fg, no bg, and no attributes
+			if cell.Char != ' ' || cell.FgColor != -1 || cell.BgColor != -1 || cell.Attributes != 0 {
+				break
 			}
 		}
-		cells[y] = row
+
+		// Trim the array, but keep at least one cell (like Node.js)
+		if lastNonBlankCell < len(rowCells)-1 {
+			rowCells = rowCells[:max(1, lastNonBlankCell+1)]
+		}
+
+		cells[row] = rowCells
 	}
 
-	log.Printf("[DEBUG] encodeSnapshot: created cells array with shape: len(cells)=%d (rows), len(cells[0])=%d (cols)", len(cells), len(cells[0]))
-	log.Printf("[DEBUG] encodeSnapshot: finished building cells array")
-
-	// Trim blank lines from the bottom (like Node.js does)
+	// Trim blank lines from the bottom (like Node.js)
 	lastNonBlankRow := len(cells) - 1
 	for ; lastNonBlankRow >= 0; lastNonBlankRow-- {
 		row := cells[lastNonBlankRow]
@@ -360,64 +383,92 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 		}
 	}
 
-	// Keep at least one row
-	actualRows = lastNonBlankRow + 1
-	if actualRows < 1 {
-		actualRows = 1
-	}
+	// Keep at least one row (like Node.js)
+	trimmedCells := cells[:max(1, lastNonBlankRow+1)]
 
-	// Trim cells to actual content
-	trimmedCells := cells[:actualRows]
+	log.Printf("[DEBUG] encodeSnapshot: trimmed from %d rows to %d rows", len(cells), len(trimmedCells))
 
-	// Calculate viewportY (like Node.js: always get visible terminal area from bottom)
-	viewportY := 0
-	if cursorY >= actualRows {
-		viewportY = cursorY - actualRows + 1
-	}
-
-	// Get cursor position relative to our viewport
-	relativeCursorY := cursorY - viewportY
-
-	log.Printf("[DEBUG] encodeSnapshot: actual rows=%d, viewportY=%d, relative cursorY=%d", actualRows, viewportY, relativeCursorY)
-
-	// Precompute buffer size (optional, for perf)
-	var buf bytes.Buffer
-
-	// Write header (28 bytes)
-	binary.Write(&buf, binary.LittleEndian, uint16(0x5654))     // Magic "VT"
-	buf.WriteByte(0x01)                                         // Version
-	buf.WriteByte(0x00)                                         // Flags
-	binary.Write(&buf, binary.LittleEndian, uint32(actualCols)) // Full terminal width
-	binary.Write(&buf, binary.LittleEndian, uint32(actualRows)) // Actual content rows
-	binary.Write(&buf, binary.LittleEndian, int32(viewportY))
-	binary.Write(&buf, binary.LittleEndian, int32(cursorX))
-	binary.Write(&buf, binary.LittleEndian, int32(relativeCursorY))
-	binary.Write(&buf, binary.LittleEndian, uint32(0)) // Reserved
-
-	log.Printf("[DEBUG] encodeSnapshot: wrote header with cols=%d, rows=%d", actualCols, actualRows)
-	log.Printf("[DEBUG] encodeSnapshot: wrote header, buffer size=%d", buf.Len())
-
-	for y := 0; y < actualRows; y++ {
-		row := trimmedCells[y]
-		// Trim trailing default cells (space, no color, no attrs)
-		lastIdx := len(row) - 1
-		for ; lastIdx >= 0; lastIdx-- {
-			c := row[lastIdx]
-			if c.Char != ' ' || c.FgColor != -1 || c.BgColor != -1 || c.Attributes != 0 {
-				break
+	// Log row details
+	for i, row := range trimmedCells {
+		if i < 3 { // Only log first 3 rows to avoid spam
+			log.Printf("[DEBUG] encodeSnapshot: row %d has %d cells", i, len(row))
+			if len(row) > 0 {
+				log.Printf("[DEBUG] encodeSnapshot: row %d first cell: char='%c' fg=%d bg=%d", i, row[0].Char, row[0].FgColor, row[0].BgColor)
+				if len(row) > 1 {
+					log.Printf("[DEBUG] encodeSnapshot: row %d last cell: char='%c' fg=%d bg=%d", i, row[len(row)-1].Char, row[len(row)-1].FgColor, row[len(row)-1].BgColor)
+				}
+				// Log how many cells are actually non-space
+				nonSpaceCount := 0
+				for _, cell := range row {
+					if cell.Char != ' ' {
+						nonSpaceCount++
+					}
+				}
+				log.Printf("[DEBUG] encodeSnapshot: row %d has %d non-space cells out of %d total", i, nonSpaceCount, len(row))
 			}
 		}
-		if lastIdx < 0 {
-			// Empty row
+	}
+
+	// Get cursor position (no viewport offset needed since we're using current state)
+	relativeCursorX := cursorX
+	relativeCursorY := cursorY
+
+	// No viewport offset for current terminal state
+	viewportY := 0
+
+	log.Printf("[DEBUG] encodeSnapshot: final cells: %d rows, viewportY=%d, cursor=(%d,%d)", len(trimmedCells), viewportY, relativeCursorX, relativeCursorY)
+
+	// Precompute buffer size (like Node.js)
+	dataSize := 32 // Header size
+	for _, rowCells := range trimmedCells {
+		if len(rowCells) == 0 || (len(rowCells) == 1 &&
+			rowCells[0].Char == ' ' &&
+			rowCells[0].FgColor == -1 &&
+			rowCells[0].BgColor == -1 &&
+			rowCells[0].Attributes == 0) {
+			dataSize += 2 // Empty row marker
+		} else {
+			dataSize += 3 // Row header
+			for _, cell := range rowCells {
+				dataSize += calculateCellSize(&cell)
+			}
+		}
+	}
+
+	// Write buffer
+	buf := bytes.NewBuffer(make([]byte, 0, dataSize))
+
+	// Write header (28 bytes) - like Node.js
+	binary.Write(buf, binary.LittleEndian, uint16(0x5654))            // Magic "VT"
+	buf.WriteByte(0x01)                                               // Version
+	buf.WriteByte(0x00)                                               // Flags
+	binary.Write(buf, binary.LittleEndian, uint32(actualCols))        // Cols
+	binary.Write(buf, binary.LittleEndian, uint32(len(trimmedCells))) // Rows
+	binary.Write(buf, binary.LittleEndian, int32(viewportY))
+	binary.Write(buf, binary.LittleEndian, int32(relativeCursorX))
+	binary.Write(buf, binary.LittleEndian, int32(relativeCursorY))
+	binary.Write(buf, binary.LittleEndian, uint32(0)) // Reserved
+
+	// Write cells (like Node.js)
+	for _, rowCells := range trimmedCells {
+		// Check if this is an empty row (like Node.js)
+		if len(rowCells) == 0 || (len(rowCells) == 1 &&
+			rowCells[0].Char == ' ' &&
+			rowCells[0].FgColor == -1 &&
+			rowCells[0].BgColor == -1 &&
+			rowCells[0].Attributes == 0) {
+			// Empty row marker
 			buf.WriteByte(0xfe)
 			buf.WriteByte(0x01)
-			continue
-		}
-		// Content row
-		buf.WriteByte(0xfd)
-		binary.Write(&buf, binary.LittleEndian, uint16(lastIdx+1))
-		for i := 0; i <= lastIdx; i++ {
-			writeCellNodejs(&buf, &row[i])
+		} else {
+			// Row with content
+			buf.WriteByte(0xfd)
+			binary.Write(buf, binary.LittleEndian, uint16(len(rowCells)))
+
+			// Write each cell
+			for _, cell := range rowCells {
+				writeCellNodejs(buf, &cell)
+			}
 		}
 	}
 
@@ -425,12 +476,57 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 	return buf.Bytes()
 }
 
-// safeCell safely accesses a cell in vt10x.State, returning a default cell on panic
-func safeCell(state *vt10x.State, x, y int) (rune, vt10x.Color, vt10x.Color) {
+// calculateCellSize calculates the size needed to encode a cell (like Node.js)
+func calculateCellSize(cell *Cell) int {
+	isSpace := cell.Char == ' '
+	hasAttrs := cell.Attributes != 0
+	hasFg := cell.FgColor != -1
+	hasBg := cell.BgColor != -1
+	isAscii := cell.Char < 128
+
+	if isSpace && !hasAttrs && !hasFg && !hasBg {
+		return 1 // Just a space marker
+	}
+
+	size := 1 // Type byte
+
+	if isAscii {
+		size += 1 // ASCII character
+	} else {
+		utf8Bytes := []byte(string(cell.Char))
+		size += 1 + len(utf8Bytes) // Length byte + UTF-8 bytes
+	}
+
+	// Attributes/colors byte
+	if hasAttrs || hasFg || hasBg {
+		size += 1 // Flags byte
+
+		if hasFg {
+			size += 1 // Palette color
+		}
+
+		if hasBg {
+			size += 1 // Palette color
+		}
+	}
+
+	return size
+}
+
+// max returns the maximum of two integers
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// safeCell safely accesses a cell in vt10x.Terminal, returning a default glyph on panic
+func safeCell(vt vt10x.Terminal, x, y int) vt10x.Glyph {
 	defer func() {
 		recover()
 	}()
-	return state.Cell(x, y)
+	return vt.Cell(x, y)
 }
 
 // writeCellNodejs encodes a cell exactly like Node.js
@@ -439,64 +535,92 @@ func writeCellNodejs(buf *bytes.Buffer, cell *Cell) {
 	hasAttrs := cell.Attributes != 0
 	hasFg := cell.FgColor != -1
 	hasBg := cell.BgColor != -1
-	isAscii := cell.Char < 128
+	isAscii := cell.Char <= 127
+
+	// Type byte format (like Node.js):
+	// Bit 7: Has extended data (attrs/colors)
+	// Bit 6: Is Unicode (vs ASCII)
+	// Bit 5: Has foreground color
+	// Bit 4: Has background color
+	// Bit 3: Is RGB foreground (vs palette)
+	// Bit 2: Is RGB background (vs palette)
+	// Bits 1-0: Character type (00=space, 01=ASCII, 10=Unicode)
 
 	if isSpace && !hasAttrs && !hasFg && !hasBg {
-		buf.WriteByte(0x00)
+		// Simple space - 1 byte
+		buf.WriteByte(0x00) // Type: space, no extended data
 		return
 	}
 
 	var typeByte uint8 = 0
+
 	if hasAttrs || hasFg || hasBg {
-		typeByte |= 0x80
+		typeByte |= 0x80 // Has extended data
 	}
+
 	if !isAscii {
-		typeByte |= 0x40
-		typeByte |= 0x02
+		typeByte |= 0x40 // Is Unicode
+		typeByte |= 0x02 // Character type: Unicode
 	} else if !isSpace {
-		typeByte |= 0x01
+		typeByte |= 0x01 // Character type: ASCII
 	}
+
 	if hasFg {
-		typeByte |= 0x20
+		typeByte |= 0x20 // Has foreground
 		if cell.FgColor > 255 {
-			typeByte |= 0x08
+			typeByte |= 0x08 // Is RGB
 		}
 	}
+
 	if hasBg {
-		typeByte |= 0x10
+		typeByte |= 0x10 // Has background
 		if cell.BgColor > 255 {
-			typeByte |= 0x04
+			typeByte |= 0x04 // Is RGB
 		}
 	}
+
 	buf.WriteByte(typeByte)
+
+	// Write character
 	if !isAscii {
-		utf8Bytes := []byte(string(cell.Char))
-		buf.WriteByte(byte(len(utf8Bytes)))
-		buf.Write(utf8Bytes)
+		charBytes := []byte(string(cell.Char))
+		buf.WriteByte(byte(len(charBytes)))
+		buf.Write(charBytes)
 	} else if !isSpace {
 		buf.WriteByte(byte(cell.Char))
 	}
+
+	// Write extended data if present
 	if typeByte&0x80 != 0 {
+		// Attributes byte (if any)
 		if hasAttrs {
 			buf.WriteByte(cell.Attributes)
 		} else if hasFg || hasBg {
-			buf.WriteByte(0)
+			buf.WriteByte(0) // No attributes but need the byte
 		}
+
+		// Foreground color
 		if hasFg {
 			if cell.FgColor > 255 {
+				// RGB
 				buf.WriteByte(byte((cell.FgColor >> 16) & 0xff))
 				buf.WriteByte(byte((cell.FgColor >> 8) & 0xff))
 				buf.WriteByte(byte(cell.FgColor & 0xff))
 			} else {
+				// Palette
 				buf.WriteByte(byte(cell.FgColor))
 			}
 		}
+
+		// Background color
 		if hasBg {
 			if cell.BgColor > 255 {
+				// RGB
 				buf.WriteByte(byte((cell.BgColor >> 16) & 0xff))
 				buf.WriteByte(byte((cell.BgColor >> 8) & 0xff))
 				buf.WriteByte(byte(cell.BgColor & 0xff))
 			} else {
+				// Palette
 				buf.WriteByte(byte(cell.BgColor))
 			}
 		}
@@ -505,11 +629,11 @@ func writeCellNodejs(buf *bytes.Buffer, cell *Cell) {
 
 // convertColor converts vt10x color to our format
 func convertColor(color vt10x.Color) int32 {
-	// vt10x.DefaultFG is 0, any other value is a color
-	if color == 0 {
-		return -1
+	// hinshun/vt10x uses DefaultFG = 16777216 and DefaultBG = 16777217
+	if color == vt10x.DefaultFG || color == vt10x.DefaultBG {
+		return -1 // Use -1 for default colors (undefined)
 	}
-	// vt10x uses ANSI color codes 0-255
+	// For other colors, convert to int32
 	return int32(color)
 }
 
