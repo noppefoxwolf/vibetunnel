@@ -1,12 +1,14 @@
 package session
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -26,7 +28,7 @@ const useEventDrivenIO = true
 // isShellBuiltin checks if a command is a shell builtin
 func isShellBuiltin(cmd string) bool {
 	builtins := []string{
-		"cd", "echo", "pwd", "export", "alias", "source", ".", 
+		"cd", "echo", "pwd", "export", "alias", "source", ".",
 		"unset", "set", "eval", "exec", "exit", "return",
 		"break", "continue", "shift", "trap", "wait", "umask",
 		"ulimit", "times", "test", "[", "[[", "type", "hash",
@@ -34,12 +36,63 @@ func isShellBuiltin(cmd string) bool {
 		"logout", "popd", "pushd", "read", "readonly", "true",
 		"false", ":", "printf", "declare", "typeset", "unalias",
 	}
-	
+
 	for _, builtin := range builtins {
 		if cmd == builtin {
 			return true
 		}
 	}
+	return false
+}
+
+// isShellExecutable checks if a command is a shell executable
+func isShellExecutable(cmd string) bool {
+	// First, check if it's a known shell name (without path)
+	shellNames := []string{"bash", "sh", "zsh", "dash", "ksh", "fish", "tcsh", "csh"}
+	baseName := filepath.Base(cmd)
+	for _, name := range shellNames {
+		if baseName == name {
+			debugLog("[DEBUG] isShellExecutable: %s detected as shell by name", cmd)
+			return true
+		}
+	}
+
+	// If it has a path, check if the file exists and is executable
+	if strings.Contains(cmd, "/") {
+		// Check if file exists and is executable
+		if info, err := os.Stat(cmd); err == nil {
+			// Check if it's executable
+			if info.Mode()&0111 != 0 {
+				// Try to read the first few bytes to check for shebang
+				if file, err := os.Open(cmd); err == nil {
+					defer file.Close()
+
+					// Read first line (shebang)
+					reader := bufio.NewReader(file)
+					if line, err := reader.ReadString('\n'); err == nil {
+						line = strings.TrimSpace(line)
+						// Check if it's a shebang pointing to a shell
+						if strings.HasPrefix(line, "#!") {
+							interpreter := strings.TrimSpace(line[2:])
+							// Remove any arguments from the interpreter path
+							if spaceIdx := strings.Index(interpreter, " "); spaceIdx != -1 {
+								interpreter = interpreter[:spaceIdx]
+							}
+							interpreterBase := filepath.Base(interpreter)
+							for _, name := range shellNames {
+								if interpreterBase == name {
+									debugLog("[DEBUG] isShellExecutable: %s detected as shell by shebang %s", cmd, line)
+									return true
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	debugLog("[DEBUG] isShellExecutable: %s not detected as shell", cmd)
 	return false
 }
 
@@ -71,9 +124,10 @@ func NewPTY(session *Session) (*PTY, error) {
 
 	// Execute through shell to handle aliases, functions, and proper PATH resolution
 	var cmd *exec.Cmd
-	if len(cmdline) == 1 && cmdline[0] == shell {
-		// If just launching the shell itself, don't use -c
-		cmd = exec.Command(shell)
+	if len(cmdline) == 1 && (cmdline[0] == shell || isShellExecutable(cmdline[0])) {
+		// If just launching the shell itself or a shell executable, don't use -c
+		debugLog("[DEBUG] NewPTY: Executing shell directly: %s", cmdline[0])
+		cmd = exec.Command(cmdline[0])
 	} else {
 		// Execute command through login shell for proper environment handling
 		// This ensures aliases and functions from .zshrc/.bashrc are loaded
@@ -176,7 +230,6 @@ func NewPTY(session *Session) (*PTY, error) {
 		log.Printf("[ERROR] NewPTY: Failed to configure PTY terminal: %v", err)
 		// Don't fail on terminal configuration errors, just log them
 	}
-	
 
 	// Set PTY size using our enhanced function
 	if err := setPTYSize(ptmx, uint16(session.info.Width), uint16(session.info.Height)); err != nil {
@@ -259,7 +312,7 @@ func NewPTY(session *Session) (*PTY, error) {
 		pty:          ptmx,
 		streamWriter: streamWriter,
 	}
-	
+
 	// For spawned sessions that will be attached, disable echo immediately
 	// to prevent race condition where output is processed before Attach() disables echo
 	if session.info.IsSpawned {
@@ -268,7 +321,7 @@ func NewPTY(session *Session) (*PTY, error) {
 			log.Printf("[ERROR] NewPTY: Failed to disable PTY echo for spawned session: %v", err)
 		}
 	}
-	
+
 	return ptyObj, nil
 }
 
@@ -282,7 +335,7 @@ func (p *PTY) Pid() int {
 // runEventDriven runs the PTY using native event-driven I/O (epoll/kqueue)
 func (p *PTY) runEventDriven() error {
 	debugLog("[DEBUG] PTY.runEventDriven: Starting event-driven I/O for session %s", p.session.ID[:8])
-	
+
 	// Create event loop
 	eventLoop, err := NewEventLoop()
 	if err != nil {
@@ -291,19 +344,19 @@ func (p *PTY) runEventDriven() error {
 		return p.pollWithSelect()
 	}
 	defer eventLoop.Close()
-	
+
 	// Set PTY to non-blocking mode
 	if err := unix.SetNonblock(int(p.pty.Fd()), true); err != nil {
 		log.Printf("[WARN] PTY.runEventDriven: Failed to set PTY non-blocking: %v", err)
 	}
-	
+
 	// Add PTY to event loop for reading
 	ptyFD := int(p.pty.Fd())
 	if err := eventLoop.Add(ptyFD, EventRead|EventHup, "pty"); err != nil {
 		log.Printf("[ERROR] PTY.runEventDriven: Failed to add PTY to event loop: %v", err)
 		return fmt.Errorf("failed to add PTY to event loop: %w", err)
 	}
-	
+
 	// Open stdin pipe
 	stdinPipe, err := os.OpenFile(p.session.StdinPath(), os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
@@ -311,19 +364,19 @@ func (p *PTY) runEventDriven() error {
 		return fmt.Errorf("failed to open stdin pipe: %w", err)
 	}
 	defer stdinPipe.Close()
-	
+
 	// Add stdin pipe to event loop
 	stdinFD := int(stdinPipe.Fd())
 	if err := eventLoop.Add(stdinFD, EventRead, "stdin"); err != nil {
 		log.Printf("[ERROR] PTY.runEventDriven: Failed to add stdin to event loop: %v", err)
 		return fmt.Errorf("failed to add stdin to event loop: %w", err)
 	}
-	
+
 	// Track process exit
 	exitCh := make(chan error, 1)
 	go func() {
 		waitErr := p.cmd.Wait()
-		
+
 		if waitErr != nil {
 			if exitError, ok := waitErr.(*exec.ExitError); ok {
 				if ws, ok := exitError.Sys().(syscall.WaitStatus); ok {
@@ -335,24 +388,24 @@ func (p *PTY) runEventDriven() error {
 			exitCode := 0
 			p.session.info.ExitCode = &exitCode
 		}
-		
+
 		p.session.UpdateStatus()
-		
+
 		// Close the stream writer to finalize the recording
 		if err := p.streamWriter.Close(); err != nil {
 			log.Printf("[ERROR] PTY.runEventDriven: Failed to close stream writer: %v", err)
 		}
-		
+
 		eventLoop.Stop()
 		exitCh <- waitErr
 	}()
-	
+
 	// Buffers for I/O
 	ptyBuf := make([]byte, 4096)
 	stdinBuf := make([]byte, 1024)
-	
+
 	debugLog("[DEBUG] PTY.runEventDriven: Starting event loop")
-	
+
 	// Run the event loop
 	err = eventLoop.Run(func(event Event) {
 		switch event.Data.(string) {
@@ -366,7 +419,7 @@ func (p *PTY) runEventDriven() error {
 							log.Printf("[ERROR] PTY.runEventDriven: Failed to write output: %v", err)
 						}
 					}
-					
+
 					if err != nil {
 						if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
 							// No more data available
@@ -378,19 +431,19 @@ func (p *PTY) runEventDriven() error {
 						eventLoop.Stop()
 						break
 					}
-					
+
 					// If we read less than buffer size, no more data
 					if n < len(ptyBuf) {
 						break
 					}
 				}
 			}
-			
+
 			if event.Events&EventHup != 0 {
 				debugLog("[DEBUG] PTY.runEventDriven: PTY closed (HUP)")
 				eventLoop.Stop()
 			}
-			
+
 		case "stdin":
 			if event.Events&EventRead != 0 {
 				// Read from stdin pipe
@@ -399,12 +452,12 @@ func (p *PTY) runEventDriven() error {
 					if _, err := p.pty.Write(stdinBuf[:n]); err != nil {
 						log.Printf("[ERROR] PTY.runEventDriven: Failed to write to PTY: %v", err)
 					}
-					
+
 					if err := p.streamWriter.WriteInput(stdinBuf[:n]); err != nil {
 						log.Printf("[ERROR] PTY.runEventDriven: Failed to write input to stream: %v", err)
 					}
 				}
-				
+
 				if err != nil && err != syscall.EAGAIN && err != syscall.EWOULDBLOCK {
 					if err != io.EOF {
 						log.Printf("[ERROR] PTY.runEventDriven: Stdin read error: %v", err)
@@ -414,14 +467,14 @@ func (p *PTY) runEventDriven() error {
 			}
 		}
 	})
-	
+
 	if err != nil {
 		log.Printf("[ERROR] PTY.runEventDriven: Event loop error: %v", err)
 	}
-	
+
 	// Wait for process exit
 	result := <-exitCh
-	
+
 	debugLog("[DEBUG] PTY.runEventDriven: Completed with result: %v", result)
 	return result
 }
@@ -504,7 +557,7 @@ func (p *PTY) Run() error {
 	if useEventDrivenIO {
 		return p.runEventDriven()
 	}
-	
+
 	// Use select-based polling as fallback
 	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 		return p.pollWithSelect()
