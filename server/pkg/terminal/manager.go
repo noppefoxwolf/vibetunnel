@@ -80,11 +80,17 @@ func (m *Manager) GetOrCreateTerminal(sessionID string) (*Terminal, error) {
 		return term, nil
 	}
 
+	log.Printf("[DEBUG] Creating new terminal for session %s with size %dx%d", sessionID, m.config.DefaultCols, m.config.DefaultRows)
+
 	// Create new terminal with vt10x
 	vt := vt10x.New(
 		vt10x.WithSize(m.config.DefaultCols, m.config.DefaultRows),
 		vt10x.WithWriter(os.Stdout), // We don't actually write to stdout, just need a writer
 	)
+
+	// Verify the terminal was created with correct size
+	cols, rows := vt.Size()
+	log.Printf("[DEBUG] Terminal created with actual size %dx%d", cols, rows)
 
 	term := &Terminal{
 		SessionID:  sessionID,
@@ -281,21 +287,32 @@ func (m *Manager) processOutput(term *Terminal, data string) {
 
 // processResize processes terminal resize
 func (m *Manager) processResize(term *Terminal, data string) {
+	log.Printf("[DEBUG] processResize called with data: %s", data)
+
 	parts := strings.Split(data, "x")
 	if len(parts) != 2 {
+		log.Printf("[DEBUG] processResize: invalid resize data format: %s", data)
 		return
 	}
 
 	cols, err1 := strconv.Atoi(parts[0])
 	rows, err2 := strconv.Atoi(parts[1])
 	if err1 != nil || err2 != nil {
+		log.Printf("[DEBUG] processResize: failed to parse dimensions from %s: err1=%v, err2=%v", data, err1, err2)
 		return
 	}
+
+	oldCols, oldRows := term.vt.Size()
+	log.Printf("[DEBUG] processResize: resizing terminal from %dx%d to %dx%d", oldCols, oldRows, cols, rows)
 
 	term.mu.Lock()
 	defer term.mu.Unlock()
 
 	term.vt.Resize(cols, rows)
+
+	// Verify the resize worked
+	actualCols, actualRows := term.vt.Size()
+	log.Printf("[DEBUG] processResize: terminal now has size %dx%d", actualCols, actualRows)
 }
 
 // encodeSnapshot encodes the terminal buffer into binary format (Node.js compatible)
@@ -318,12 +335,12 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 		log.Printf("[DEBUG] encodeSnapshot: using default size %dx%d", cols, rows)
 	}
 
-	// Swap cols and rows to match Node.js server behavior
-	// Node.js server reports 24 cols and 80 rows for an 80x24 terminal
-	actualCols := rows
-	actualRows := cols
+	// Use correct dimensions - no swapping needed
+	// For an 80x24 terminal: cols=80, rows=24
+	actualCols := cols
+	actualRows := rows
 
-	// Extract cells from current terminal state (bottom lines only)
+	// Extract cells from current terminal state
 	cells := make([][]Cell, actualRows)
 	for row := 0; row < actualRows; row++ {
 		rowCells := make([]Cell, 0)
