@@ -357,8 +357,8 @@ export class TerminalManager {
     const buffer = Buffer.allocUnsafe(dataSize);
     let offset = 0;
 
-    // Write header (32 bytes)
-    buffer.writeUInt16LE(0x5654, offset);
+    // Write header (28 bytes)
+    buffer.writeUInt16LE(0x5654, offset); // Magic "VT" (little-endian)
     offset += 2; // Magic "VT"
     buffer.writeUInt8(0x01, offset); // Version 1 - our only format
     offset += 1; // Version

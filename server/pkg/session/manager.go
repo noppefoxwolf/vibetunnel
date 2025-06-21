@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -52,7 +51,7 @@ func (m *Manager) GetSession(sessionID string) (*Session, error) {
 	// Get last modified time
 	sessionDir := filepath.Join(m.config.ControlDir, sessionID)
 	streamPath := filepath.Join(sessionDir, "stream-out")
-	
+
 	lastModified := info.StartedAt
 	if stat, err := os.Stat(streamPath); err == nil {
 		lastModified = stat.ModTime()
@@ -132,54 +131,16 @@ func (m *Manager) SendInput(sessionID string, input string) error {
 
 // SendKey sends a special key to a session
 func (m *Manager) SendKey(sessionID string, key string) error {
-	// Map key names to sequences
+	// Map key names to sequences - match Node.js server exactly
 	keyMap := map[string]string{
-		"enter":      "\r",
-		"tab":        "\t",
-		"backspace":  "\x7f",
-		"escape":     "\x1b",
-		"up":         "\x1b[A",
-		"down":       "\x1b[B",
-		"right":      "\x1b[C",
-		"left":       "\x1b[D",
-		"home":       "\x1b[H",
-		"end":        "\x1b[F",
-		"pageup":     "\x1b[5~",
-		"pagedown":   "\x1b[6~",
-		"delete":     "\x1b[3~",
-		"insert":     "\x1b[2~",
-		"f1":         "\x1bOP",
-		"f2":         "\x1bOQ",
-		"f3":         "\x1bOR",
-		"f4":         "\x1bOS",
-		"f5":         "\x1b[15~",
-		"f6":         "\x1b[17~",
-		"f7":         "\x1b[18~",
-		"f8":         "\x1b[19~",
-		"f9":         "\x1b[20~",
-		"f10":        "\x1b[21~",
-		"f11":        "\x1b[23~",
-		"f12":        "\x1b[24~",
-	}
-
-	// Handle ctrl+key combinations
-	if strings.HasPrefix(key, "ctrl+") {
-		char := key[5:]
-		if len(char) == 1 {
-			// Convert to control character
-			charCode := int(char[0])
-			if charCode >= 97 && charCode <= 122 { // a-z
-				return m.SendInput(sessionID, string(rune(charCode-96)))
-			}
-		}
-	}
-
-	// Handle alt+key combinations
-	if strings.HasPrefix(key, "alt+") {
-		char := key[4:]
-		if len(char) == 1 {
-			return m.SendInput(sessionID, "\x1b"+char)
-		}
+		"arrow_up":    "\x1b[A",
+		"arrow_down":  "\x1b[B",
+		"arrow_right": "\x1b[C",
+		"arrow_left":  "\x1b[D",
+		"escape":      "\x1b",
+		"enter":       "\r",
+		"ctrl_enter":  "\n",
+		"shift_enter": "\r\n",
 	}
 
 	// Look up key in map
@@ -254,18 +215,18 @@ func (m *Manager) isProcessAlive(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	
+
 	// Check if process exists
 	procPath := fmt.Sprintf("/proc/%d", pid)
 	if _, err := os.Stat(procPath); err == nil {
 		return true
 	}
-	
+
 	// Fallback: try to send signal 0
 	if _, err := os.FindProcess(pid); err == nil {
 		return true
 	}
-	
+
 	return false
 }
 

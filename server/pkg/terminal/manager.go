@@ -22,14 +22,14 @@ import (
 
 // Terminal represents a terminal state with vt10x
 type Terminal struct {
-	SessionID    string
-	vt           *vt10x.VT
-	state        *vt10x.State
-	LastUpdate   time.Time
-	watcher      *fsnotify.Watcher
-	streamFile   *os.File
-	offset       int64
-	mu           sync.RWMutex
+	SessionID  string
+	vt         *vt10x.VT
+	state      *vt10x.State
+	LastUpdate time.Time
+	watcher    *fsnotify.Watcher
+	streamFile *os.File
+	offset     int64
+	mu         sync.RWMutex
 }
 
 // Cell represents a terminal cell
@@ -53,13 +53,13 @@ const (
 
 // Manager manages terminal states
 type Manager struct {
-	config      *config.Config
-	terminals   map[string]*Terminal
-	mu          sync.RWMutex
-	subscribers map[string][]func(string) // sessionID -> callbacks
-	subMu       sync.RWMutex
+	config         *config.Config
+	terminals      map[string]*Terminal
+	mu             sync.RWMutex
+	subscribers    map[string][]func(string) // sessionID -> callbacks
+	subMu          sync.RWMutex
 	debounceTimers map[string]*time.Timer
-	debounceMu    sync.Mutex
+	debounceMu     sync.Mutex
 }
 
 // NewManager creates a new terminal manager
@@ -83,15 +83,15 @@ func (m *Manager) GetOrCreateTerminal(sessionID string) (*Terminal, error) {
 
 	// Create new terminal with vt10x
 	state := &vt10x.State{}
-	
+
 	vt, err := vt10x.New(state, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Resize after creation
 	vt.Resize(m.config.DefaultCols, m.config.DefaultRows)
-	
+
 	term := &Terminal{
 		SessionID:  sessionID,
 		vt:         vt,
@@ -111,15 +111,23 @@ func (m *Manager) GetOrCreateTerminal(sessionID string) (*Terminal, error) {
 
 // GetBufferSnapshot returns a binary encoded snapshot of the terminal buffer
 func (m *Manager) GetBufferSnapshot(sessionID string) ([]byte, error) {
+	log.Printf("[DEBUG] GetBufferSnapshot: called for session %s", sessionID)
+
 	term, err := m.GetOrCreateTerminal(sessionID)
 	if err != nil {
+		log.Printf("[DEBUG] GetBufferSnapshot: failed to get/create terminal for session %s: %v", sessionID, err)
 		return nil, err
 	}
+
+	log.Printf("[DEBUG] GetBufferSnapshot: got terminal for session %s", sessionID)
 
 	term.mu.RLock()
 	defer term.mu.RUnlock()
 
-	return m.encodeSnapshot(term), nil
+	buffer := m.encodeSnapshot(term)
+	log.Printf("[DEBUG] GetBufferSnapshot: encoded buffer for session %s, len=%d", sessionID, len(buffer))
+
+	return buffer, nil
 }
 
 // startWatchingStream starts watching a stream file for changes
@@ -293,95 +301,169 @@ func (m *Manager) processResize(term *Terminal, data string) {
 	term.vt.Resize(cols, rows)
 }
 
-// encodeSnapshot encodes the terminal buffer into binary format
+// encodeSnapshot encodes the terminal buffer into binary format (Node.js compatible)
 func (m *Manager) encodeSnapshot(term *Terminal) []byte {
-	var buf bytes.Buffer
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[DEBUG] encodeSnapshot: recovered from panic: %v", r)
+		}
+	}()
 
-	// Get terminal state
 	cols, rows := term.state.Size()
 	cursorX, cursorY := term.state.Cursor()
-	
-	// Ensure we have valid dimensions
+
+	log.Printf("[DEBUG] encodeSnapshot: terminal size %dx%d, cursor at (%d,%d)", cols, rows, cursorX, cursorY)
+
 	if cols <= 0 || rows <= 0 {
 		cols = m.config.DefaultCols
 		rows = m.config.DefaultRows
+		log.Printf("[DEBUG] encodeSnapshot: using default size %dx%d", cols, rows)
 	}
-	
-	// Calculate viewport
+
 	viewportY := cursorY - rows + 1
 	if viewportY < 0 {
 		viewportY = 0
 	}
 
-	// Write header (32 bytes)
-	buf.Write([]byte{0x56, 0x54}) // Magic "VT"
-	buf.WriteByte(0x01)            // Version
-	buf.WriteByte(0x00)            // Flags
+	log.Printf("[DEBUG] encodeSnapshot: viewportY=%d", viewportY)
 
-	// Dimensions
+	// Build 2D slice of cells for all rows
+	cells := make([][]Cell, rows)
+	for y := 0; y < rows; y++ {
+		row := make([]Cell, cols)
+		for x := 0; x < cols; x++ {
+			ch, fg, bg := safeCell(term.state, x, y)
+			row[x] = Cell{
+				Char:    ch,
+				FgColor: convertColor(fg),
+				BgColor: convertColor(bg),
+			}
+		}
+		cells[y] = row
+	}
+
+	log.Printf("[DEBUG] encodeSnapshot: finished building cells array")
+
+	// Precompute buffer size (optional, for perf)
+	var buf bytes.Buffer
+
+	// Write header (28 bytes)
+	binary.Write(&buf, binary.LittleEndian, uint16(0x5654)) // Magic "VT"
+	buf.WriteByte(0x01)                                     // Version
+	buf.WriteByte(0x00)                                     // Flags
 	binary.Write(&buf, binary.LittleEndian, uint32(cols))
 	binary.Write(&buf, binary.LittleEndian, uint32(rows))
-
-	// Viewport and cursor
 	binary.Write(&buf, binary.LittleEndian, int32(viewportY))
 	binary.Write(&buf, binary.LittleEndian, int32(cursorX))
 	binary.Write(&buf, binary.LittleEndian, int32(cursorY))
+	binary.Write(&buf, binary.LittleEndian, uint32(0)) // Reserved
 
-	// Reserved
-	buf.Write(make([]byte, 8))
+	log.Printf("[DEBUG] encodeSnapshot: wrote header, buffer size=%d", buf.Len())
 
-	// Encode visible rows
 	for y := 0; y < rows; y++ {
-		isEmpty := true
-		var rowCells []Cell
-		
-		// Get row content from vt10x - using defer to catch any panics
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// If Cell() panics, fill the row with spaces
-					for i := len(rowCells); i < cols; i++ {
-						rowCells = append(rowCells, Cell{Char: ' ', FgColor: -1, BgColor: -1})
-					}
-				}
-			}()
-			
-			for x := 0; x < cols; x++ {
-				ch, fg, bg := term.state.Cell(x, y)
-				
-				if ch == 0 {
-					rowCells = append(rowCells, Cell{Char: ' ', FgColor: -1, BgColor: -1})
-					continue
-				}
-				
-				// Convert vt10x cell to our Cell format
-				c := Cell{
-					Char:    ch,
-					FgColor: convertColor(fg),
-					BgColor: convertColor(bg),
-				}
-				
-				// vt10x doesn't expose attributes directly, so we'll handle them later if needed
-				
-				rowCells = append(rowCells, c)
-				
-				if ch != 0 && ch != ' ' {
-					isEmpty = false
-				}
+		row := cells[y]
+		// Trim trailing default cells (space, no color, no attrs)
+		lastIdx := len(row) - 1
+		for ; lastIdx >= 0; lastIdx-- {
+			c := row[lastIdx]
+			if c.Char != ' ' || c.FgColor != -1 || c.BgColor != -1 || c.Attributes != 0 {
+				break
 			}
-		}()
-
-		if isEmpty {
-			// Write empty row marker
-			buf.WriteByte(0xFE)
-			buf.WriteByte(1)
-		} else {
-			// Write content row
-			m.writeContentRow(&buf, rowCells)
+		}
+		if lastIdx < 0 {
+			// Empty row
+			buf.WriteByte(0xfe)
+			buf.WriteByte(0x01)
+			continue
+		}
+		// Content row
+		buf.WriteByte(0xfd)
+		binary.Write(&buf, binary.LittleEndian, uint16(lastIdx+1))
+		for i := 0; i <= lastIdx; i++ {
+			writeCellNodejs(&buf, &row[i])
 		}
 	}
 
+	log.Printf("[DEBUG] encodeSnapshot: finished encoding, final buffer size=%d", buf.Len())
 	return buf.Bytes()
+}
+
+// safeCell safely accesses a cell in vt10x.State, returning a default cell on panic
+func safeCell(state *vt10x.State, x, y int) (rune, vt10x.Color, vt10x.Color) {
+	defer func() {
+		recover()
+	}()
+	return state.Cell(x, y)
+}
+
+// writeCellNodejs encodes a cell exactly like Node.js
+func writeCellNodejs(buf *bytes.Buffer, cell *Cell) {
+	isSpace := cell.Char == ' '
+	hasAttrs := cell.Attributes != 0
+	hasFg := cell.FgColor != -1
+	hasBg := cell.BgColor != -1
+	isAscii := cell.Char < 128
+
+	if isSpace && !hasAttrs && !hasFg && !hasBg {
+		buf.WriteByte(0x00)
+		return
+	}
+
+	var typeByte uint8 = 0
+	if hasAttrs || hasFg || hasBg {
+		typeByte |= 0x80
+	}
+	if !isAscii {
+		typeByte |= 0x40
+		typeByte |= 0x02
+	} else if !isSpace {
+		typeByte |= 0x01
+	}
+	if hasFg {
+		typeByte |= 0x20
+		if cell.FgColor > 255 {
+			typeByte |= 0x08
+		}
+	}
+	if hasBg {
+		typeByte |= 0x10
+		if cell.BgColor > 255 {
+			typeByte |= 0x04
+		}
+	}
+	buf.WriteByte(typeByte)
+	if !isAscii {
+		utf8Bytes := []byte(string(cell.Char))
+		buf.WriteByte(byte(len(utf8Bytes)))
+		buf.Write(utf8Bytes)
+	} else if !isSpace {
+		buf.WriteByte(byte(cell.Char))
+	}
+	if typeByte&0x80 != 0 {
+		if hasAttrs {
+			buf.WriteByte(cell.Attributes)
+		} else if hasFg || hasBg {
+			buf.WriteByte(0)
+		}
+		if hasFg {
+			if cell.FgColor > 255 {
+				buf.WriteByte(byte((cell.FgColor >> 16) & 0xff))
+				buf.WriteByte(byte((cell.FgColor >> 8) & 0xff))
+				buf.WriteByte(byte(cell.FgColor & 0xff))
+			} else {
+				buf.WriteByte(byte(cell.FgColor))
+			}
+		}
+		if hasBg {
+			if cell.BgColor > 255 {
+				buf.WriteByte(byte((cell.BgColor >> 16) & 0xff))
+				buf.WriteByte(byte((cell.BgColor >> 8) & 0xff))
+				buf.WriteByte(byte(cell.BgColor & 0xff))
+			} else {
+				buf.WriteByte(byte(cell.BgColor))
+			}
+		}
+	}
 }
 
 // convertColor converts vt10x color to our format
@@ -392,116 +474,6 @@ func convertColor(color vt10x.Color) int32 {
 	}
 	// vt10x uses ANSI color codes 0-255
 	return int32(color)
-}
-
-// writeContentRow writes a content row
-func (m *Manager) writeContentRow(buf *bytes.Buffer, row []Cell) {
-	// Find last non-space cell
-	lastIdx := len(row) - 1
-	for ; lastIdx >= 0; lastIdx-- {
-		if row[lastIdx].Char != 0 && row[lastIdx].Char != ' ' {
-			break
-		}
-	}
-
-	if lastIdx < 0 {
-		// Empty row
-		buf.WriteByte(0xFE)
-		buf.WriteByte(1)
-		return
-	}
-
-	// Write content marker and cell count
-	buf.WriteByte(0xFD) // Content row marker
-	binary.Write(buf, binary.LittleEndian, uint16(lastIdx+1))
-
-	// Write cells
-	for i := 0; i <= lastIdx; i++ {
-		m.writeCell(buf, &row[i])
-	}
-}
-
-// writeCell writes a single cell
-func (m *Manager) writeCell(buf *bytes.Buffer, cell *Cell) {
-	if cell.Char == 0 || cell.Char == ' ' {
-		// Simple space
-		buf.WriteByte(0x00)
-		return
-	}
-
-	// Determine cell type
-	var typeByte uint8 = 0
-	hasExtended := false
-
-	// Check if we need extended data
-	if cell.FgColor != -1 || cell.BgColor != -1 || cell.Attributes != 0 {
-		typeByte |= 0x80 // Has extended data
-		hasExtended = true
-	}
-
-	// Character type
-	if cell.Char < 128 {
-		typeByte |= 0x01 // ASCII
-	} else {
-		typeByte |= 0x02 // Unicode
-		typeByte |= 0x40 // Is Unicode flag
-	}
-
-	// Color flags
-	if cell.FgColor != -1 {
-		typeByte |= 0x20 // Has foreground
-		if cell.FgColor > 255 {
-			typeByte |= 0x08 // Is RGB
-		}
-	}
-	if cell.BgColor != -1 {
-		typeByte |= 0x10 // Has background
-		if cell.BgColor > 255 {
-			typeByte |= 0x04 // Is RGB
-		}
-	}
-
-	buf.WriteByte(typeByte)
-
-	// Write character
-	if cell.Char < 128 {
-		buf.WriteByte(byte(cell.Char))
-	} else {
-		// Write Unicode as UTF-8
-		utf8Bytes := []byte(string(cell.Char))
-		buf.WriteByte(byte(len(utf8Bytes)))
-		buf.Write(utf8Bytes)
-	}
-
-	// Write extended data if needed
-	if hasExtended {
-		// Attributes
-		buf.WriteByte(cell.Attributes)
-
-		// Foreground color
-		if cell.FgColor != -1 {
-			if cell.FgColor <= 255 {
-				buf.WriteByte(byte(cell.FgColor))
-			} else {
-				// RGB color
-				buf.WriteByte(byte((cell.FgColor >> 16) & 0xFF)) // R
-				buf.WriteByte(byte((cell.FgColor >> 8) & 0xFF))  // G
-				buf.WriteByte(byte(cell.FgColor & 0xFF))         // B
-			}
-		}
-
-		// Background color
-		if cell.BgColor != -1 {
-			if cell.BgColor <= 255 {
-				buf.WriteByte(byte(cell.BgColor))
-			} else {
-				// RGB color
-				buf.WriteByte(byte((cell.BgColor >> 16) & 0xFF)) // R
-				buf.WriteByte(byte((cell.BgColor >> 8) & 0xFF))  // G
-				buf.WriteByte(byte(cell.BgColor & 0xFF))         // B
-			}
-		}
-	}
 }
 
 // Subscribe adds a callback for buffer changes
@@ -526,7 +498,7 @@ func (m *Manager) Subscribe(sessionID string, callback func(string)) func() {
 		// Clean up if no more subscribers
 		if len(m.subscribers[sessionID]) == 0 {
 			delete(m.subscribers, sessionID)
-			
+
 			// Also clean up terminal
 			m.mu.Lock()
 			if term, exists := m.terminals[sessionID]; exists {
@@ -556,7 +528,7 @@ func (m *Manager) scheduleBufferChangeNotification(sessionID string) {
 	// Schedule new notification in 50ms
 	m.debounceTimers[sessionID] = time.AfterFunc(50*time.Millisecond, func() {
 		m.notifyBufferChange(sessionID)
-		
+
 		m.debounceMu.Lock()
 		delete(m.debounceTimers, sessionID)
 		m.debounceMu.Unlock()

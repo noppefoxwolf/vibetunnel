@@ -228,22 +228,17 @@ func (w *Watcher) processStreamLine(sessionID, line string) {
 		return
 	}
 
-	// Format as data event
-	eventData := map[string]interface{}{
-		"type": event[1],
+	// Check for exit event format: ["exit", exitCode, sessionID]
+	if len(event) == 3 {
+		if exitStr, ok := event[0].(string); ok && exitStr == "exit" {
+			// Exit event, send as-is
+			w.sendToClients(sessionID, fmt.Sprintf("data: %s\n\n", line))
+			return
+		}
 	}
 
-	switch event[1] {
-	case "o": // output
-		eventData["text"] = event[2]
-		eventData["timestamp"] = event[0]
-	case "e": // exit
-		eventData["code"] = event[2]
-		eventData["timestamp"] = event[0]
-	}
-
-	data, _ := json.Marshal(eventData)
-	w.sendToClients(sessionID, fmt.Sprintf("data: %s\n\n", data))
+	// For regular terminal events [timestamp, type, data], send as-is
+	w.sendToClients(sessionID, fmt.Sprintf("data: %s\n\n", line))
 }
 
 // sendToClients sends data to all clients watching a session
@@ -327,7 +322,20 @@ func (w *Watcher) sendExistingContent(sessionID string, client *Client) {
 			continue
 		}
 
-		// Calculate relative timestamp for this client
+		// Check for exit event format: ["exit", exitCode, sessionID]
+		if len(event) == 3 {
+			if exitStr, ok := event[0].(string); ok && exitStr == "exit" {
+				// Exit event, send as-is
+				select {
+				case client.SendChannel <- fmt.Sprintf("data: %s\n\n", line):
+				case <-client.Done:
+					return
+				}
+				continue
+			}
+		}
+
+		// For regular terminal events [timestamp, type, data], adjust timestamp and send as-is
 		if ts, ok := event[0].(float64); ok {
 			eventTime := sessionStartTime.Add(time.Duration(ts * float64(time.Second)))
 			relativeTime := eventTime.Sub(clientStartTime).Seconds()
@@ -337,20 +345,8 @@ func (w *Watcher) sendExistingContent(sessionID string, client *Client) {
 			event[0] = relativeTime
 		}
 
-		// Format and send event
-		eventData := map[string]interface{}{
-			"type":      event[1],
-			"timestamp": event[0],
-		}
-
-		switch event[1] {
-		case "o":
-			eventData["text"] = event[2]
-		case "e":
-			eventData["code"] = event[2]
-		}
-
-		data, _ := json.Marshal(eventData)
+		// Send the adjusted array as-is
+		data, _ := json.Marshal(event)
 		select {
 		case client.SendChannel <- fmt.Sprintf("data: %s\n\n", data):
 		case <-client.Done:

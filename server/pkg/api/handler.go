@@ -40,6 +40,9 @@ func NewHandler(
 
 // RegisterRoutes registers all API routes
 func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
+	// Global cleanup endpoint (matches other server implementations)
+	router.POST("/cleanup-exited", h.CleanupExitedSessions)
+
 	// Session routes
 	sessions := router.Group("/sessions")
 	{
@@ -49,7 +52,7 @@ func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 		sessions.DELETE("/:id", h.KillSession)
 		sessions.DELETE("/:id/cleanup", h.CleanupSession)
 		sessions.POST("/cleanup-exited", h.CleanupExitedSessions)
-		
+
 		// Session interaction
 		sessions.GET("/:id/buffer", h.GetSessionBuffer)
 		sessions.GET("/:id/stream", h.StreamSession)

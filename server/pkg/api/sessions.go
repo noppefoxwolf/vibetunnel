@@ -3,6 +3,9 @@ package api
 import (
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -40,7 +43,7 @@ type CreateSessionRequest struct {
 // ListSessions lists all sessions
 func (h *Handler) ListSessions(c *gin.Context) {
 	log.Printf("[ListSessions] Request from %s", c.ClientIP())
-	
+
 	// Get local sessions
 	localSessions, err := h.sessionManager.ListSessions()
 	if err != nil {
@@ -48,7 +51,7 @@ func (h *Handler) ListSessions(c *gin.Context) {
 		c.JSON(500, gin.H{"error": fmt.Sprintf("Failed to list sessions: %v", err)})
 		return
 	}
-	
+
 	log.Printf("[ListSessions] Found %d local sessions", len(localSessions))
 
 	// Convert to response format
@@ -99,16 +102,28 @@ func (h *Handler) ListSessions(c *gin.Context) {
 // CreateSession creates a new session
 func (h *Handler) CreateSession(c *gin.Context) {
 	log.Printf("[CreateSession] Request from %s", c.ClientIP())
-	
+
 	var req CreateSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[CreateSession] Invalid request body: %v", err)
 		c.JSON(400, gin.H{"error": "Invalid request body"})
 		return
 	}
-	
-	log.Printf("[CreateSession] Command: %v, WorkingDir: %s, Name: %s, RemoteID: %s", 
+
+	log.Printf("[CreateSession] Command: %v, WorkingDir: %s, Name: %s, RemoteID: %s",
 		req.Command, req.WorkingDir, req.Name, req.RemoteID)
+
+	// Expand ~ in workingDir to the user's home directory
+	if strings.HasPrefix(req.WorkingDir, "~") {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			if req.WorkingDir == "~" {
+				req.WorkingDir = home
+			} else if strings.HasPrefix(req.WorkingDir, "~/") {
+				req.WorkingDir = filepath.Join(home, req.WorkingDir[2:])
+			}
+		}
+	}
 
 	// If HQ mode and remoteId specified, forward to remote
 	if h.config.IsHQMode && req.RemoteID != "" {
@@ -172,7 +187,7 @@ func (h *Handler) GetSession(c *gin.Context) {
 func (h *Handler) KillSession(c *gin.Context) {
 	sessionID := c.Param("id")
 	log.Printf("[KillSession] Request for session: %q from %s", sessionID, c.ClientIP())
-	
+
 	// Check for empty session ID
 	if sessionID == "" {
 		log.Printf("[KillSession] Empty session ID")
@@ -238,7 +253,7 @@ func (h *Handler) CleanupExitedSessions(c *gin.Context) {
 	if h.config.IsHQMode && h.remoteRegistry != nil {
 		remoteResults := h.remoteRegistry.CleanupExitedSessions()
 		response["remoteResults"] = remoteResults
-		
+
 		totalCleaned := localCleaned
 		for _, result := range remoteResults {
 			if cleaned, ok := result["cleaned"].(int); ok {
@@ -351,7 +366,7 @@ func (h *Handler) SendInput(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "Invalid request body"})
 		return
 	}
-	
+
 	log.Printf("[SendInput] Session %s - Text: %q, Key: %q", sessionID, req.Text, req.Key)
 
 	// Validate: must have either text or key, not both

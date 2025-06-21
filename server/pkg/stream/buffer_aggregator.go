@@ -3,6 +3,7 @@ package stream
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"log"
 	"sync"
 
@@ -21,9 +22,9 @@ type BufferAggregator struct {
 
 // connection represents a WebSocket connection
 type connection struct {
-	conn         *websocket.Conn
+	conn          *websocket.Conn
 	subscriptions map[string]func() // sessionID -> unsubscribe function
-	mu           sync.Mutex
+	mu            sync.Mutex
 }
 
 // Message types for WebSocket protocol
@@ -44,6 +45,7 @@ func NewBufferAggregator(cfg *config.Config, tm *terminal.Manager) *BufferAggreg
 
 // HandleConnection handles a new WebSocket connection
 func (ba *BufferAggregator) HandleConnection(conn *websocket.Conn) {
+	log.Printf("[DEBUG] WebSocket connection opened: %p", conn)
 	// Create connection wrapper
 	c := &connection{
 		conn:          conn,
@@ -54,17 +56,6 @@ func (ba *BufferAggregator) HandleConnection(conn *websocket.Conn) {
 	ba.mu.Lock()
 	ba.connections[conn] = c
 	ba.mu.Unlock()
-
-	// Send welcome message
-	welcomeMsg := Message{
-		Type:    "connected",
-		Version: "1.0",
-	}
-	if err := conn.WriteJSON(welcomeMsg); err != nil {
-		log.Printf("Failed to send welcome message: %v", err)
-		ba.removeConnection(conn)
-		return
-	}
 
 	// Handle messages
 	go ba.handleMessages(c)
@@ -86,6 +77,8 @@ func (ba *BufferAggregator) handleMessages(c *connection) {
 			break
 		}
 
+		log.Printf("[DEBUG] BufferAggregator: received message type=%s, sessionId=%s", msg.Type, msg.SessionID)
+
 		switch msg.Type {
 		case "subscribe":
 			ba.handleSubscribe(c, msg.SessionID)
@@ -101,44 +94,51 @@ func (ba *BufferAggregator) handleMessages(c *connection) {
 
 // handleSubscribe handles subscription requests
 func (ba *BufferAggregator) handleSubscribe(c *connection, sessionID string) {
+	log.Printf("[DEBUG] handleSubscribe: subscribing to session %s", sessionID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	log.Printf("[DEBUG] handleSubscribe: acquired lock for session %s", sessionID)
+
 	// Check if already subscribed
 	if _, exists := c.subscriptions[sessionID]; exists {
+		log.Printf("[DEBUG] handleSubscribe: already subscribed to %s", sessionID)
 		return
 	}
 
+	log.Printf("[DEBUG] handleSubscribe: not already subscribed, proceeding for session %s", sessionID)
+
 	// Subscribe to terminal buffer changes
+	log.Printf("[DEBUG] handleSubscribe: calling terminalManager.Subscribe for session %s", sessionID)
 	unsubscribe := ba.terminalManager.Subscribe(sessionID, func(sid string) {
+		log.Printf("[DEBUG] Subscribe callback: buffer update for session %s", sid)
 		// Send buffer update
 		buffer, err := ba.terminalManager.GetBufferSnapshot(sid)
 		if err != nil {
-			log.Printf("Failed to get buffer snapshot: %v", err)
+			log.Printf("[DEBUG] Failed to get buffer snapshot: %v", err)
 			return
 		}
-
-		// Send binary message
 		if err := ba.sendBinaryUpdate(c.conn, sid, buffer); err != nil {
-			log.Printf("Failed to send buffer update: %v", err)
+			log.Printf("[DEBUG] Failed to send buffer update: %v", err)
 		}
 	})
 
+	log.Printf("[DEBUG] handleSubscribe: got unsubscribe function for session %s", sessionID)
+
 	c.subscriptions[sessionID] = unsubscribe
 
-	// Send confirmation
-	confirmMsg := Message{
-		Type:      "subscribed",
-		SessionID: sessionID,
-	}
-	if err := c.conn.WriteJSON(confirmMsg); err != nil {
-		log.Printf("Failed to send subscription confirmation: %v", err)
-	}
-
 	// Send initial buffer
+	log.Printf("[DEBUG] handleSubscribe: about to call GetBufferSnapshot for session %s", sessionID)
 	buffer, err := ba.terminalManager.GetBufferSnapshot(sessionID)
 	if err == nil {
-		ba.sendBinaryUpdate(c.conn, sessionID, buffer)
+		log.Printf("[DEBUG] handleSubscribe: sending initial buffer for session %s, len=%d", sessionID, len(buffer))
+		if err := ba.sendBinaryUpdate(c.conn, sessionID, buffer); err != nil {
+			log.Printf("[DEBUG] handleSubscribe: failed to send initial buffer for session %s: %v", sessionID, err)
+		} else {
+			log.Printf("[DEBUG] handleSubscribe: successfully sent initial buffer for session %s", sessionID)
+		}
+	} else {
+		log.Printf("[DEBUG] handleSubscribe: failed to get initial buffer for session %s: %v", sessionID, err)
 	}
 }
 
@@ -150,18 +150,14 @@ func (ba *BufferAggregator) handleUnsubscribe(c *connection, sessionID string) {
 	if unsubscribe, exists := c.subscriptions[sessionID]; exists {
 		unsubscribe()
 		delete(c.subscriptions, sessionID)
-
-		// Send confirmation
-		confirmMsg := Message{
-			Type:      "unsubscribed",
-			SessionID: sessionID,
-		}
-		c.conn.WriteJSON(confirmMsg)
 	}
 }
 
 // handlePing handles ping messages
 func (ba *BufferAggregator) handlePing(c *connection) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	pongMsg := Message{
 		Type: "pong",
 	}
@@ -170,27 +166,54 @@ func (ba *BufferAggregator) handlePing(c *connection) {
 
 // sendBinaryUpdate sends a binary buffer update
 func (ba *BufferAggregator) sendBinaryUpdate(conn *websocket.Conn, sessionID string, buffer []byte) error {
+	log.Printf("[DEBUG] sendBinaryUpdate: ENTERED for session %s, len=%d", sessionID, len(buffer))
+	log.Printf("[DEBUG] sendBinaryUpdate: connection pointer: %p", conn)
+
+	ba.mu.RLock()
+	c, exists := ba.connections[conn]
+	ba.mu.RUnlock()
+
+	log.Printf("[DEBUG] sendBinaryUpdate: connection lookup result: exists=%v, connection=%p", exists, c)
+
+	if !exists {
+		log.Printf("[DEBUG] sendBinaryUpdate: connection not found for session %s", sessionID)
+		return nil
+	}
+
+	// Note: Caller already holds c.mu.Lock(), so we don't need to lock again
+	log.Printf("[DEBUG] sendBinaryUpdate: proceeding without additional lock (caller already holds it)")
+
 	// Format: [Magic Byte 0xBF][Session ID Length (4 bytes)][Session ID][Buffer Data]
 	var msg bytes.Buffer
-
 	// Magic byte
 	msg.WriteByte(0xBF)
-
 	// Session ID length
 	sessionIDBytes := []byte(sessionID)
 	binary.Write(&msg, binary.LittleEndian, uint32(len(sessionIDBytes)))
-
 	// Session ID
 	msg.Write(sessionIDBytes)
-
 	// Buffer data
 	msg.Write(buffer)
-
-	return conn.WriteMessage(websocket.BinaryMessage, msg.Bytes())
+	result := msg.Bytes()
+	// Log first 16 bytes as hex
+	hexLen := 16
+	if len(result) < hexLen {
+		hexLen = len(result)
+	}
+	log.Printf("[DEBUG] sendBinaryUpdate: first %d bytes: %s", hexLen, hex.EncodeToString(result[:hexLen]))
+	log.Printf("[DEBUG] sendBinaryUpdate: about to write binary message for session %s, total size=%d", sessionID, len(result))
+	err := c.conn.WriteMessage(websocket.BinaryMessage, result)
+	if err != nil {
+		log.Printf("[DEBUG] sendBinaryUpdate: WriteMessage failed for session %s: %v", sessionID, err)
+	} else {
+		log.Printf("[DEBUG] sendBinaryUpdate: WriteMessage succeeded for session %s", sessionID)
+	}
+	return err
 }
 
 // removeConnection removes a connection and cleans up subscriptions
 func (ba *BufferAggregator) removeConnection(conn *websocket.Conn) {
+	log.Printf("[DEBUG] WebSocket connection closed: %p", conn)
 	ba.mu.Lock()
 	c, exists := ba.connections[conn]
 	if exists {

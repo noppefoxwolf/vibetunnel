@@ -36,12 +36,16 @@ func NewWebSocketServer(cfg *config.Config, aggregator *BufferAggregator) *WebSo
 
 // HandleWebSocket handles WebSocket upgrade requests
 func (ws *WebSocketServer) HandleWebSocket(c *gin.Context) {
+	log.Printf("[DEBUG] WebSocket: connection attempt from %s", c.ClientIP())
+
 	// Upgrade connection
 	conn, err := ws.upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("Failed to upgrade WebSocket: %v", err)
 		return
 	}
+
+	log.Printf("[DEBUG] WebSocket: connection established from %s", c.ClientIP())
 
 	// Configure connection
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))

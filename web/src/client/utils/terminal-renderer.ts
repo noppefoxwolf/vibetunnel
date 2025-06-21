@@ -290,6 +290,7 @@ export class TerminalRenderer {
     // Read header
     const magic = view.getUint16(offset, true);
     offset += 2;
+
     if (magic !== 0x5654) {
       throw new Error('Invalid buffer format');
     }

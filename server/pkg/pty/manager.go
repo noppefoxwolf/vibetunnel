@@ -21,30 +21,30 @@ import (
 // SessionInfo holds information about a PTY session
 type SessionInfo struct {
 	ID          string    `json:"id"`
-	Command     string    `json:"command"`     // Stored as cmdline in JSON
-	CommandLine []string  `json:"cmdline"`     // TypeScript compatibility
-	WorkingDir  string    `json:"workingDir"`  // Stored as cwd in JSON
-	CWD         string    `json:"cwd"`         // TypeScript compatibility
+	Command     string    `json:"command"`    // Stored as cmdline in JSON
+	CommandLine []string  `json:"cmdline"`    // TypeScript compatibility
+	WorkingDir  string    `json:"workingDir"` // Stored as cwd in JSON
+	CWD         string    `json:"cwd"`        // TypeScript compatibility
 	Name        string    `json:"name"`
 	Status      string    `json:"status"` // starting, running, exited
 	ExitCode    int       `json:"exitCode,omitempty"`
-	StartedAt   time.Time `json:"startedAt"`    // Stored as started_at in JSON
-	StartedAtTS string    `json:"started_at"`   // TypeScript compatibility
+	StartedAt   time.Time `json:"startedAt"`  // Stored as started_at in JSON
+	StartedAtTS string    `json:"started_at"` // TypeScript compatibility
 	PID         int       `json:"pid,omitempty"`
 	Cols        int       `json:"cols"`
 	Rows        int       `json:"rows"`
 	Term        string    `json:"term"`
-	SpawnType   string    `json:"spawn_type,omitempty"` // "pty" or "external"
-	IsSpawned   bool      `json:"-"`                    // Computed from SpawnType
+	SpawnType   string    `json:"spawn_type,omitempty"`  // "pty" or "external"
+	IsSpawned   bool      `json:"-"`                     // Computed from SpawnType
 	ControlPath string    `json:"controlPath,omitempty"` // path to control pipe for external sessions
 }
 
 // Manager manages PTY sessions
 type Manager struct {
-	config    *config.Config
-	sessions  map[string]*session
-	mu        sync.RWMutex
-	wg        sync.WaitGroup
+	config   *config.Config
+	sessions map[string]*session
+	mu       sync.RWMutex
+	wg       sync.WaitGroup
 }
 
 // session represents an active PTY session
@@ -267,8 +267,7 @@ func (m *Manager) handleProcessExit(sess *session) {
 	// Write exit event to stream
 	sess.mu.Lock()
 	if sess.streamFile != nil {
-		elapsed := time.Since(sess.info.StartedAt).Seconds()
-		event := []interface{}{elapsed, "e", exitCode}
+		event := []interface{}{"exit", exitCode, sess.info.ID}
 		eventJSON, _ := json.Marshal(event)
 		fmt.Fprintf(sess.streamFile, "%s\n", eventJSON)
 		sess.streamFile.Close()
@@ -477,14 +476,14 @@ func (m *Manager) saveSessionInfo(info *SessionInfo) error {
 	// Convert to TypeScript format for saving
 	// Create a map that matches TypeScript's session.json format
 	tsFormat := map[string]interface{}{
-		"cmdline":     info.CommandLine, // Use the original array
-		"name":        info.Name,
-		"cwd":         info.WorkingDir,
-		"status":      info.Status,
-		"started_at":  info.StartedAt.Format(time.RFC3339),
-		"term":        info.Term,
-		"spawn_type":  "pty",
-		"pid":         info.PID,
+		"cmdline":    info.CommandLine, // Use the original array
+		"name":       info.Name,
+		"cwd":        info.WorkingDir,
+		"status":     info.Status,
+		"started_at": info.StartedAt.Format(time.RFC3339),
+		"term":       info.Term,
+		"spawn_type": "pty",
+		"pid":        info.PID,
 	}
 
 	// Only add exit_code if session has exited
@@ -539,7 +538,7 @@ func (m *Manager) loadSessionInfo(sessionID string) (*SessionInfo, error) {
 			info.StartedAt = t
 		}
 	}
-	
+
 	// Set IsSpawned based on SpawnType
 	info.IsSpawned = (info.SpawnType == "pty")
 
