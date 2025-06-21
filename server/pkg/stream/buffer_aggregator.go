@@ -112,7 +112,7 @@ func (ba *BufferAggregator) handleSubscribe(c *connection, sessionID string) {
 	log.Printf("[DEBUG] handleSubscribe: calling terminalManager.Subscribe for session %s", sessionID)
 	unsubscribe := ba.terminalManager.Subscribe(sessionID, func(sid string) {
 		log.Printf("[DEBUG] Subscribe callback: buffer update for session %s", sid)
-		// Send buffer update
+		// Send buffer update - sendBinaryUpdate will handle its own locking
 		buffer, err := ba.terminalManager.GetBufferSnapshot(sid)
 		if err != nil {
 			log.Printf("[DEBUG] Failed to get buffer snapshot: %v", err)
@@ -127,16 +127,19 @@ func (ba *BufferAggregator) handleSubscribe(c *connection, sessionID string) {
 
 	c.subscriptions[sessionID] = unsubscribe
 
-	// Send initial buffer
+	// Send initial buffer - sendBinaryUpdate will handle its own locking, so we need to unlock first
 	log.Printf("[DEBUG] handleSubscribe: about to call GetBufferSnapshot for session %s", sessionID)
 	buffer, err := ba.terminalManager.GetBufferSnapshot(sessionID)
 	if err == nil {
 		log.Printf("[DEBUG] handleSubscribe: sending initial buffer for session %s, len=%d", sessionID, len(buffer))
+		// Temporarily unlock to avoid deadlock since sendBinaryUpdate will acquire the lock
+		c.mu.Unlock()
 		if err := ba.sendBinaryUpdate(c.conn, sessionID, buffer); err != nil {
 			log.Printf("[DEBUG] handleSubscribe: failed to send initial buffer for session %s: %v", sessionID, err)
 		} else {
 			log.Printf("[DEBUG] handleSubscribe: successfully sent initial buffer for session %s", sessionID)
 		}
+		c.mu.Lock() // Re-acquire lock for defer unlock
 	} else {
 		log.Printf("[DEBUG] handleSubscribe: failed to get initial buffer for session %s: %v", sessionID, err)
 	}
@@ -155,12 +158,14 @@ func (ba *BufferAggregator) handleUnsubscribe(c *connection, sessionID string) {
 
 // handlePing handles ping messages
 func (ba *BufferAggregator) handlePing(c *connection) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	// sendJSON is also a write operation, so we need to protect it too
 	pongMsg := Message{
 		Type: "pong",
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	c.conn.WriteJSON(pongMsg)
 }
 
@@ -180,8 +185,11 @@ func (ba *BufferAggregator) sendBinaryUpdate(conn *websocket.Conn, sessionID str
 		return nil
 	}
 
-	// Note: Caller already holds c.mu.Lock(), so we don't need to lock again
-	log.Printf("[DEBUG] sendBinaryUpdate: proceeding without additional lock (caller already holds it)")
+	// ALWAYS acquire the connection mutex to prevent concurrent writes
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	log.Printf("[DEBUG] sendBinaryUpdate: acquired connection mutex for session %s", sessionID)
 
 	// Format: [Magic Byte 0xBF][Session ID Length (4 bytes)][Session ID][Buffer Data]
 	var msg bytes.Buffer
@@ -241,12 +249,18 @@ func (ba *BufferAggregator) BroadcastBufferUpdate(sessionID string, buffer []byt
 
 	for _, c := range connections {
 		c.mu.Lock()
-		if _, subscribed := c.subscriptions[sessionID]; subscribed {
+		subscribed := false
+		if _, exists := c.subscriptions[sessionID]; exists {
+			subscribed = true
+		}
+		c.mu.Unlock()
+
+		if subscribed {
+			// sendBinaryUpdate will handle its own locking
 			if err := ba.sendBinaryUpdate(c.conn, sessionID, buffer); err != nil {
 				log.Printf("Failed to send buffer update: %v", err)
 			}
 		}
-		c.mu.Unlock()
 	}
 }
 
