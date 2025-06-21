@@ -320,19 +320,18 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 		log.Printf("[DEBUG] encodeSnapshot: using default size %dx%d", cols, rows)
 	}
 
-	viewportY := cursorY - rows + 1
-	if viewportY < 0 {
-		viewportY = 0
-	}
+	// Swap cols and rows to match Node.js server behavior
+	// Node.js server reports 24 cols and 80 rows for an 80x24 terminal
+	actualCols := rows
+	actualRows := cols
 
-	log.Printf("[DEBUG] encodeSnapshot: viewportY=%d", viewportY)
-
-	// Build 2D slice of cells for all rows
-	cells := make([][]Cell, rows)
-	for y := 0; y < rows; y++ {
-		row := make([]Cell, cols)
-		for x := 0; x < cols; x++ {
-			ch, fg, bg := safeCell(term.state, x, y)
+	// Build 2D slice of cells as [rows][cols] to match Node.js/xterm.js and frontend expectations
+	// Outer slice = rows (Y), inner slice = columns (X)
+	cells := make([][]Cell, actualRows)
+	for y := 0; y < actualRows; y++ {
+		row := make([]Cell, actualCols)
+		for x := 0; x < actualCols; x++ {
+			ch, fg, bg := safeCell(term.state, x, y) // (x, y) is correct: x=col, y=row
 			row[x] = Cell{
 				Char:    ch,
 				FgColor: convertColor(fg),
@@ -342,26 +341,64 @@ func (m *Manager) encodeSnapshot(term *Terminal) []byte {
 		cells[y] = row
 	}
 
+	log.Printf("[DEBUG] encodeSnapshot: created cells array with shape: len(cells)=%d (rows), len(cells[0])=%d (cols)", len(cells), len(cells[0]))
 	log.Printf("[DEBUG] encodeSnapshot: finished building cells array")
+
+	// Trim blank lines from the bottom (like Node.js does)
+	lastNonBlankRow := len(cells) - 1
+	for ; lastNonBlankRow >= 0; lastNonBlankRow-- {
+		row := cells[lastNonBlankRow]
+		hasContent := false
+		for _, cell := range row {
+			if cell.Char != ' ' || cell.FgColor != -1 || cell.BgColor != -1 || cell.Attributes != 0 {
+				hasContent = true
+				break
+			}
+		}
+		if hasContent {
+			break
+		}
+	}
+
+	// Keep at least one row
+	actualRows = lastNonBlankRow + 1
+	if actualRows < 1 {
+		actualRows = 1
+	}
+
+	// Trim cells to actual content
+	trimmedCells := cells[:actualRows]
+
+	// Calculate viewportY (like Node.js: always get visible terminal area from bottom)
+	viewportY := 0
+	if cursorY >= actualRows {
+		viewportY = cursorY - actualRows + 1
+	}
+
+	// Get cursor position relative to our viewport
+	relativeCursorY := cursorY - viewportY
+
+	log.Printf("[DEBUG] encodeSnapshot: actual rows=%d, viewportY=%d, relative cursorY=%d", actualRows, viewportY, relativeCursorY)
 
 	// Precompute buffer size (optional, for perf)
 	var buf bytes.Buffer
 
 	// Write header (28 bytes)
-	binary.Write(&buf, binary.LittleEndian, uint16(0x5654)) // Magic "VT"
-	buf.WriteByte(0x01)                                     // Version
-	buf.WriteByte(0x00)                                     // Flags
-	binary.Write(&buf, binary.LittleEndian, uint32(cols))
-	binary.Write(&buf, binary.LittleEndian, uint32(rows))
+	binary.Write(&buf, binary.LittleEndian, uint16(0x5654))     // Magic "VT"
+	buf.WriteByte(0x01)                                         // Version
+	buf.WriteByte(0x00)                                         // Flags
+	binary.Write(&buf, binary.LittleEndian, uint32(actualCols)) // Full terminal width
+	binary.Write(&buf, binary.LittleEndian, uint32(actualRows)) // Actual content rows
 	binary.Write(&buf, binary.LittleEndian, int32(viewportY))
 	binary.Write(&buf, binary.LittleEndian, int32(cursorX))
-	binary.Write(&buf, binary.LittleEndian, int32(cursorY))
+	binary.Write(&buf, binary.LittleEndian, int32(relativeCursorY))
 	binary.Write(&buf, binary.LittleEndian, uint32(0)) // Reserved
 
+	log.Printf("[DEBUG] encodeSnapshot: wrote header with cols=%d, rows=%d", actualCols, actualRows)
 	log.Printf("[DEBUG] encodeSnapshot: wrote header, buffer size=%d", buf.Len())
 
-	for y := 0; y < rows; y++ {
-		row := cells[y]
+	for y := 0; y < actualRows; y++ {
+		row := trimmedCells[y]
 		// Trim trailing default cells (space, no color, no attrs)
 		lastIdx := len(row) - 1
 		for ; lastIdx >= 0; lastIdx-- {
